@@ -17,6 +17,7 @@ import 'package:vit_nextclass/features/settings/presentation/widgets/about_secti
 import 'package:vit_nextclass/features/settings/providers/settings_provider.dart';
 import 'package:vit_nextclass/features/home/providers/home_provider.dart';
 import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
+import 'package:vit_nextclass/features/onboarding/presentation/onboarding_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});

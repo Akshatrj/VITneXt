@@ -1,11 +1,38 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/models/schedule_override.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 
+class _FakePathProvider extends Fake
+    with MockPlatformInterfaceMixin
+    implements PathProviderPlatform {
+  _FakePathProvider(this.path);
+  final String path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory testDir;
+
+  setUpAll(() async {
+    testDir = await Directory.systemTemp.createTemp('vit_nextclass_test_');
+    PathProviderPlatform.instance = _FakePathProvider(testDir.path);
+  });
+
+  tearDownAll(() async {
+    if (await testDir.exists()) {
+      await testDir.delete(recursive: true);
+    }
+  });
 
   group('LocalStorage integration', () {
     late LocalStorage storage;

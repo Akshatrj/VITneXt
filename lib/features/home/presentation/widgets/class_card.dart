@@ -65,7 +65,7 @@ class ClassCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      _buildStatusBadge(theme),
+                      _buildStatusBadge(context, theme),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -154,7 +154,7 @@ class ClassCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBadge(ThemeData theme) {
+  Widget _buildStatusBadge(BuildContext context, ThemeData theme) {
     String text = '';
     Color bgColor = Colors.transparent;
     IconData? icon;

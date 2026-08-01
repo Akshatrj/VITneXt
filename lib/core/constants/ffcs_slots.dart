@@ -11,7 +11,6 @@ import 'package:vit_nextclass/core/constants/ffcs_grid.dart';
 /// - Morning tutorials: TA1–TG1, TAA1–TDD1
 /// - Evening tutorials: TA2–TG2, TAA2–TDD2
 /// - 90-min sub-slots (VIT Bhopal): A11–D13, A21–D23
-library;
 
 /// Represents a single scheduled session within a week.
 class SlotTiming {

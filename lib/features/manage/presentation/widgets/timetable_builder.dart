@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vit_nextclass/core/constants/ffcs_grid.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/services/slot_parser.dart';
+import 'package:vit_nextclass/core/theme/app_colors.dart';
 
 class TimetableBuilder extends StatefulWidget {
   final List<Course> existingCourses;
@@ -21,7 +22,7 @@ class TimetableBuilder extends StatefulWidget {
   State<TimetableBuilder> createState() => _TimetableBuilderState();
 }
 
-class _TimetableBuilderState extends State.TimetableBuilder {
+class _TimetableBuilderState extends State<TimetableBuilder> {
   late Set<String> _selectedCells;
 
   @override
