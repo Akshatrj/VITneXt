@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
+import 'package:vit_nextclass/core/services/app_log.dart';
+import 'package:vit_nextclass/features/home/providers/home_provider.dart';
+import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
 import 'package:vit_nextclass/features/settings/providers/settings_provider.dart';
 
 class SemesterSwitcher extends ConsumerWidget {
@@ -51,8 +54,16 @@ class SemesterSwitcher extends ConsumerWidget {
                   onChanged: (value) async {
                     if (value != null && !isActive) {
                       await ref.read(localStorageProvider).setActiveSemester(value);
-                      // Invalidate providers to trigger UI refresh
+                      AppLog.instance.info('semester', 'switched', data: {
+                        'semesterId': value,
+                        'name': semester.name,
+                      });
                       ref.invalidate(activeSemesterProvider);
+                      ref.invalidate(coursesProvider);
+                      ref.invalidate(overridesProvider);
+                      ref.invalidate(holidaysProvider);
+                      invalidateTodaySchedule(ref);
+                      await refreshWidgetSchedule(ref);
                     }
                   },
                   secondary: !isActive

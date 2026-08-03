@@ -11,12 +11,23 @@ class TimeUtils {
     return '${formatTime(startH, startM)} – ${formatTime(endH, endM)}';
   }
 
-  static String formatCountdown(int minutes) {
-    if (minutes > 0) {
-      return 'Starts in $minutes minutes';
-    } else {
-      return 'Ends in ${-minutes} minutes';
+  /// Shared duration format used by app UI and Android widget.
+  /// Examples: `5 min`, `1 hr`, `1 hr 5 min`, `2 hr 30 min`
+  static String formatDuration(int totalMinutes) {
+    final minutes = totalMinutes.abs();
+    if (minutes <= 0) return '0 min';
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    if (hours > 0 && mins > 0) return '$hours hr $mins min';
+    if (hours > 0) return '$hours hr';
+    return '$mins min';
+  }
+
+  static String formatCountdown(int minutesUntilStartOrNegativeUntilEnd) {
+    if (minutesUntilStartOrNegativeUntilEnd > 0) {
+      return 'Starts in ${formatDuration(minutesUntilStartOrNegativeUntilEnd)}';
     }
+    return 'Ends in ${formatDuration(-minutesUntilStartOrNegativeUntilEnd)}';
   }
 
   static int totalMinutes(int hour, int minute) {

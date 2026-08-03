@@ -5,6 +5,7 @@ import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/models/schedule_override.dart';
 import 'package:vit_nextclass/core/models/holiday.dart';
+import 'package:vit_nextclass/core/services/app_log.dart';
 
 class LocalStorage {
   static final LocalStorage _instance = LocalStorage._internal();
@@ -18,6 +19,7 @@ class LocalStorage {
     if (_initialized) return;
     _dir = await getApplicationDocumentsDirectory();
     _initialized = true;
+    AppLog.instance.info('db', 'LocalStorage initialized', data: {'path': _dir.path});
   }
 
   File get _semestersFile => File('${_dir.path}/semesters.json');
@@ -146,16 +148,69 @@ class LocalStorage {
   }
 
   // --- Holiday Methods ---
-  Future<Holiday?> getHolidayForDate(DateTime date) async {
-    final holidays = await getAllHolidays();
-    for (var h in holidays) {
-      if (_isSameDay(h.date, date)) return h;
+  Future<Holiday?> getHolidayForDate(DateTime date, {String? semesterId}) async {
+    final holidays = await getHolidaysForSemester(semesterId);
+    final matches = <Holiday>[];
+    for (final h in holidays) {
+      if (h.covers(date)) {
+        matches.add(h);
+        continue;
+      }
+      if (h.isRecurring &&
+          h.startDate.month == date.month &&
+          h.startDate.day == date.day) {
+        matches.add(h);
+      }
     }
-    return null;
+    if (matches.isEmpty) return null;
+
+    // Prefer events that hide classes, then exams, then earliest created.
+    matches.sort((a, b) {
+      final hideCmp = (b.hidesClasses ? 1 : 0).compareTo(a.hidesClasses ? 1 : 0);
+      if (hideCmp != 0) return hideCmp;
+      final examCmp = (b.isExam ? 1 : 0).compareTo(a.isExam ? 1 : 0);
+      if (examCmp != 0) return examCmp;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return matches.first;
+  }
+
+  /// Removes holidays that cover [date] for the given semester (or active).
+  Future<int> deleteHolidaysCoveringDate(DateTime date, {String? semesterId}) async {
+    final all = await getAllHolidays();
+    if (semesterId == null) {
+      final active = await getActiveSemester();
+      semesterId = active?.id;
+    }
+    final before = all.length;
+    all.removeWhere((h) {
+      final sameSemester =
+          h.semesterId == null || h.semesterId!.isEmpty || h.semesterId == semesterId;
+      if (!sameSemester) return false;
+      if (h.covers(date)) return true;
+      return h.isRecurring &&
+          h.startDate.month == date.month &&
+          h.startDate.day == date.day;
+    });
+    if (all.length == before) return 0;
+    await _writeList(_holidaysFile, all, (h) => h.toJson());
+    return before - all.length;
   }
 
   Future<List<Holiday>> getAllHolidays() async {
     return _readList(_holidaysFile, Holiday.fromJson);
+  }
+
+  Future<List<Holiday>> getHolidaysForSemester(String? semesterId) async {
+    final all = await getAllHolidays();
+    if (semesterId == null) {
+      final active = await getActiveSemester();
+      semesterId = active?.id;
+    }
+    return all.where((h) {
+      if (h.semesterId == null || h.semesterId!.isEmpty) return true;
+      return h.semesterId == semesterId;
+    }).toList();
   }
 
   Future<void> saveHoliday(Holiday holiday) async {
@@ -164,7 +219,38 @@ class LocalStorage {
     if (index >= 0) {
       holidays[index] = holiday;
     } else {
-      holidays.add(holiday);
+      // Duplicate detection by date range + name + type + semester
+      final dupIndex = holidays.indexWhere((h) =>
+          h.label == holiday.label &&
+          h.type == holiday.type &&
+          h.semesterId == holiday.semesterId &&
+          _isSameDay(h.startDate, holiday.startDate) &&
+          _isSameDay(h.endDate, holiday.endDate));
+      if (dupIndex >= 0) {
+        holidays[dupIndex] = holiday.copyWith(id: holidays[dupIndex].id);
+      } else {
+        holidays.add(holiday);
+      }
+    }
+    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+  }
+
+  Future<void> saveHolidays(List<Holiday> toSave, {bool replaceDuplicates = true}) async {
+    final holidays = await getAllHolidays();
+    for (final holiday in toSave) {
+      final dupIndex = holidays.indexWhere((h) =>
+          h.label == holiday.label &&
+          h.type == holiday.type &&
+          h.semesterId == holiday.semesterId &&
+          _isSameDay(h.startDate, holiday.startDate) &&
+          _isSameDay(h.endDate, holiday.endDate));
+      if (dupIndex >= 0) {
+        if (replaceDuplicates) {
+          holidays[dupIndex] = holiday.copyWith(id: holidays[dupIndex].id);
+        }
+      } else {
+        holidays.add(holiday);
+      }
     }
     await _writeList(_holidaysFile, holidays, (h) => h.toJson());
   }
@@ -172,6 +258,13 @@ class LocalStorage {
   Future<void> deleteHoliday(String id) async {
     final holidays = await getAllHolidays();
     holidays.removeWhere((h) => h.id == id);
+    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+  }
+
+  Future<void> deleteHolidays(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    final holidays = await getAllHolidays();
+    holidays.removeWhere((h) => idSet.contains(h.id));
     await _writeList(_holidaysFile, holidays, (h) => h.toJson());
   }
 
@@ -192,21 +285,30 @@ class LocalStorage {
 
   Future<void> importAll(Map<String, dynamic> data) async {
     await init();
-    if (data.containsKey('semesters')) {
-      final list = (data['semesters'] as List).map((e) => Semester.fromJson(e)).toList();
-      await _writeList(_semestersFile, list, (e) => e.toJson());
-    }
-    if (data.containsKey('courses')) {
-      final list = (data['courses'] as List).map((e) => Course.fromJson(e)).toList();
-      await _writeList(_coursesFile, list, (e) => e.toJson());
-    }
-    if (data.containsKey('overrides')) {
-      final list = (data['overrides'] as List).map((e) => ScheduleOverride.fromJson(e)).toList();
-      await _writeList(_overridesFile, list, (e) => e.toJson());
-    }
-    if (data.containsKey('holidays')) {
-      final list = (data['holidays'] as List).map((e) => Holiday.fromJson(e)).toList();
-      await _writeList(_holidaysFile, list, (e) => e.toJson());
+    AppLog.instance.info('import', 'importAll begin', data: {
+      'keys': data.keys.toList(),
+    });
+    try {
+      if (data.containsKey('semesters')) {
+        final list = (data['semesters'] as List).map((e) => Semester.fromJson(e)).toList();
+        await _writeList(_semestersFile, list, (e) => e.toJson());
+      }
+      if (data.containsKey('courses')) {
+        final list = (data['courses'] as List).map((e) => Course.fromJson(e)).toList();
+        await _writeList(_coursesFile, list, (e) => e.toJson());
+      }
+      if (data.containsKey('overrides')) {
+        final list = (data['overrides'] as List).map((e) => ScheduleOverride.fromJson(e)).toList();
+        await _writeList(_overridesFile, list, (e) => e.toJson());
+      }
+      if (data.containsKey('holidays')) {
+        final list = (data['holidays'] as List).map((e) => Holiday.fromJson(e)).toList();
+        await _writeList(_holidaysFile, list, (e) => e.toJson());
+      }
+      AppLog.instance.info('import', 'importAll success');
+    } catch (e, st) {
+      AppLog.instance.error('import', 'importAll failed', error: e, stackTrace: st);
+      rethrow;
     }
   }
 
@@ -218,7 +320,7 @@ class LocalStorage {
     if (await _holidaysFile.exists()) await _holidaysFile.delete();
   }
 
-  /// Deletes all courses and overrides linked to courses in [semesterId].
+  /// Deletes all courses, linked overrides, and semester-scoped holidays for [semesterId].
   Future<void> resetSemester(String semesterId) async {
     await init();
     final courses = await _readList(_coursesFile, Course.fromJson);
@@ -233,5 +335,12 @@ class LocalStorage {
         .where((o) => o.linkedCourseId == null || !semesterCourseIds.contains(o.linkedCourseId))
         .toList();
     await _writeList(_overridesFile, keptOverrides, (e) => e.toJson());
+
+    final holidays = await getAllHolidays();
+    await _writeList(
+      _holidaysFile,
+      holidays.where((h) => h.semesterId != semesterId).toList(),
+      (e) => e.toJson(),
+    );
   }
 }

@@ -6,6 +6,7 @@ import 'package:vit_nextclass/features/calendar/presentation/calendar_screen.dar
 import 'package:vit_nextclass/features/manage/presentation/manage_screen.dart';
 import 'package:vit_nextclass/features/settings/presentation/settings_screen.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
+import 'package:vit_nextclass/core/services/app_log.dart';
 
 class AppScaffold extends ConsumerStatefulWidget {
   const AppScaffold({super.key});
@@ -43,6 +44,7 @@ class AppScaffoldState extends ConsumerState<AppScaffold> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (index) {
+          AppLog.instance.info('nav', 'tab selected', data: {'index': index});
           ref.read(appNavIndexProvider.notifier).state = index;
         },
         animationDuration: const Duration(milliseconds: 400),

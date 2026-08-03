@@ -1,4 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:vit_nextclass/core/models/resolved_class.dart';
@@ -23,8 +24,21 @@ class NotificationService {
     _initialized = true;
   }
 
+  /// Requests POST_NOTIFICATIONS on Android 13+. Returns true if granted (or not required).
+  Future<bool> requestPermission() async {
+    final status = await Permission.notification.request();
+    return status.isGranted || status.isLimited;
+  }
+
+  Future<bool> hasPermission() async {
+    final status = await Permission.notification.status;
+    return status.isGranted || status.isLimited;
+  }
+
   Future<void> cancelAll() async {
-    await _plugin.cancelAll();
+    try {
+      await _plugin.cancelAll();
+    } catch (_) {}
   }
 
   int _notificationId(DateTime date, ResolvedClass cls) {
@@ -45,6 +59,9 @@ class NotificationService {
     await cancelAll();
 
     if (minutesBefore <= 0) return;
+
+    // Don't schedule if the user hasn't granted notification permission.
+    if (!await hasPermission()) return;
 
     final now = DateTime.now();
 
@@ -71,24 +88,28 @@ class NotificationService {
         final tzTime = tz.TZDateTime.from(notifyAt, tz.local);
         final id = _notificationId(date, cls);
 
-        await _plugin.zonedSchedule(
-          id,
-          'Class starting soon',
-          '${cls.courseCode} · ${cls.courseName} in $minutesBefore min · ${cls.classroom}',
-          tzTime,
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'class_reminders',
-              'Class Reminders',
-              channelDescription: 'Reminders before your FFCS classes',
-              importance: Importance.high,
-              priority: Priority.high,
+        try {
+          await _plugin.zonedSchedule(
+            id,
+            'Class starting soon',
+            '${cls.courseCode} · ${cls.courseName} in $minutesBefore min · ${cls.classroom}',
+            tzTime,
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'class_reminders',
+                'Class Reminders',
+                channelDescription: 'Reminders before your FFCS classes',
+                importance: Importance.high,
+                priority: Priority.high,
+              ),
             ),
-          ),
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-        );
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+          );
+        } catch (_) {
+          // Skip individual schedule failures (timezone / OEM quirks).
+        }
       }
     }
   }

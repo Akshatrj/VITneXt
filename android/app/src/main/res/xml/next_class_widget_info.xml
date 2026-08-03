@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Standard AppWidgetProvider metadata.
+  OnePlus Shelf (modern OxygenOS) hosts third-party widgets via the system
+  AppWidgetHost — no OnePlus-specific SDK exists. Compatible hosts need:
+  exported receiver + APPWIDGET_UPDATE, sizing, resize bounds, preview.
+-->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
     android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:maxResizeWidth="570dp"
+    android:maxResizeHeight="370dp"
     android:targetCellWidth="4"
     android:targetCellHeight="2"
-    android:updatePeriodMillis="60000"
+    android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/next_class_widget"
+    android:previewLayout="@layout/next_class_widget_preview"
     android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
-    android:previewLayout="@layout/next_class_widget"
+    android:widgetCategory="home_screen|keyguard"
     android:description="@string/widget_description" />

@@ -145,12 +145,25 @@ class _AddCourseSheetState extends ConsumerState<AddCourseSheet> {
     );
 
     final storage = ref.read(localStorageProvider);
-    await storage.saveCourse(newCourse);
-    _invalidateSchedule();
-    await _refreshWidget();
+    try {
+      await storage.saveCourse(newCourse);
+      _invalidateSchedule();
 
-    if (mounted) {
+      if (!mounted) return;
       Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${newCourse.code} saved')),
+      );
+
+      // Refresh widget/notifications after closing so failures never block save UI.
+      try {
+        await _refreshWidget();
+      } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save course: $e')),
+      );
     }
   }
 
@@ -202,19 +215,19 @@ class _AddCourseSheetState extends ConsumerState<AddCourseSheet> {
               labelText: 'Course Code (e.g. CSE1001)',
               border: OutlineInputBorder(),
             ),
-            validator: (v) => v!.isEmpty ? 'Required' : null,
+            validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Course Name', border: OutlineInputBorder()),
-            validator: (v) => v!.isEmpty ? 'Required' : null,
+            validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _facultyController,
             decoration: const InputDecoration(labelText: 'Faculty Name', border: OutlineInputBorder()),
-            validator: (v) => v!.isEmpty ? 'Required' : null,
+            validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -262,7 +275,7 @@ class _AddCourseSheetState extends ConsumerState<AddCourseSheet> {
                       labelText: 'Room Number (e.g. 204)',
                       border: OutlineInputBorder(),
                     ),
-                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                    validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
                   ),
                 ),
               ],

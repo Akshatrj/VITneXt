@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vit_nextclass/core/services/notification_service.dart';
 import 'package:vit_nextclass/widgets/app_scaffold.dart';
 
 import 'widgets/welcome_step.dart';
@@ -33,7 +35,48 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
+  void _previousPage() {
+    if (_currentPage > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    final status = await Permission.notification.status;
+    if (status.isGranted || status.isLimited) return;
+
+    if (!mounted) return;
+    final shouldAsk = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enable notifications?'),
+        content: const Text(
+          'Allow notifications so VITneXt can remind you before class.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldAsk == true) {
+      await NotificationService.instance.requestPermission();
+    }
+  }
+
   Future<void> _completeOnboarding() async {
+    await _requestNotificationPermission();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_complete', true);
 
@@ -52,7 +95,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Expanded(
               child: PageView(
                 controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(), // Prevent manual swiping
+                physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: (index) {
                   setState(() {
                     _currentPage = index;
@@ -60,8 +103,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 },
                 children: [
                   WelcomeStep(onNext: _nextPage),
-                  SemesterStep(onNext: _nextPage),
-                  CourseStep(onComplete: _completeOnboarding),
+                  SemesterStep(onNext: _nextPage, onBack: _previousPage),
+                  CourseStep(onComplete: _completeOnboarding, onBack: _previousPage),
                 ],
               ),
             ),

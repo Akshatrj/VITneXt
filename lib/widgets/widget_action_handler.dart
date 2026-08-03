@@ -17,50 +17,106 @@ class WidgetActionHandler extends ConsumerStatefulWidget {
   ConsumerState<WidgetActionHandler> createState() => _WidgetActionHandlerState();
 }
 
-class _WidgetActionHandlerState extends ConsumerState<WidgetActionHandler> {
+class _WidgetActionHandlerState extends ConsumerState<WidgetActionHandler>
+    with WidgetsBindingObserver {
+  bool _processing = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _processPendingWidgetCancel());
   }
 
-  Future<void> _processPendingWidgetCancel() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('flutter.pending_widget_cancel') != true) return;
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
-    await prefs.remove('flutter.pending_widget_cancel');
-    final courseId = prefs.getString('flutter.widget_linked_course_id');
-    final dateStr = prefs.getString('flutter.widget_schedule_date');
-    if (courseId == null || dateStr == null || !mounted) return;
-
-    final date = DateTime.parse(dateStr);
-    final storage = ref.read(localStorageProvider);
-    final overrides = await storage.getOverridesForDate(date);
-    bool alreadyCancelled = false;
-    for (final o in overrides) {
-      if (o.type == OverrideType.cancelled && o.linkedCourseId == courseId) {
-        alreadyCancelled = true;
-        break;
-      }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _processPendingWidgetCancel();
     }
-    if (alreadyCancelled) return;
+  }
 
-    final override = ScheduleOverride(
-      id: const Uuid().v4(),
-      date: date,
-      type: OverrideType.cancelled,
-      linkedCourseId: courseId,
-      reason: 'Cancelled by teacher',
-    );
-    await storage.saveOverride(override);
-    ref.invalidate(overridesProvider);
-    invalidateTodaySchedule(ref);
-    await refreshWidgetSchedule(ref);
+  Future<void> _processPendingWidgetCancel() async {
+    if (_processing) return;
+    _processing = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Next class marked as cancelled')),
-      );
+      // SharedPreferences plugin adds the "flutter." prefix — do NOT include it here.
+      final pending = prefs.getBool('pending_widget_cancel_toggle') == true ||
+          prefs.getString('pending_widget_cancel_toggle') == 'true';
+      if (!pending) return;
+
+      await prefs.remove('pending_widget_cancel_toggle');
+      final key = prefs.getString('pending_widget_cancel_key');
+      await prefs.remove('pending_widget_cancel_key');
+      if (key == null || key.isEmpty || !mounted) return;
+
+      final parts = key.split('|');
+      if (parts.length != 2) return;
+      final dateStr = parts[0];
+      final courseId = parts[1];
+      if (courseId.isEmpty) return;
+
+      final DateTime date;
+      try {
+        final segs = dateStr.split('-');
+        if (segs.length != 3) return;
+        date = DateTime(
+          int.parse(segs[0]),
+          int.parse(segs[1]),
+          int.parse(segs[2]),
+        );
+      } catch (_) {
+        return;
+      }
+
+      final storage = ref.read(localStorageProvider);
+      final overrides = await storage.getOverridesForDate(date);
+      ScheduleOverride? existing;
+      for (final o in overrides) {
+        if (o.type == OverrideType.cancelled && o.linkedCourseId == courseId) {
+          existing = o;
+          break;
+        }
+      }
+
+      if (existing != null) {
+        await storage.deleteOverride(existing.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Class restored')),
+          );
+        }
+      } else {
+        final override = ScheduleOverride(
+          id: const Uuid().v4(),
+          date: date,
+          type: OverrideType.cancelled,
+          linkedCourseId: courseId,
+          reason: 'Cancelled by Teacher',
+        );
+        await storage.saveOverride(override);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Class marked as cancelled')),
+          );
+        }
+      }
+
+      ref.invalidate(overridesProvider);
+      invalidateScheduleForDate(ref, date);
+      invalidateTodaySchedule(ref);
+      await refreshWidgetSchedule(ref);
+    } catch (_) {
+      // Never crash the app from a widget action.
+    } finally {
+      _processing = false;
     }
   }
 

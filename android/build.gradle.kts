@@ -15,14 +15,30 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
+
+/**
+ * file_picker hardcodes compileSdk 34, but flutter_plugin_android_lifecycle
+ * requires consumers to compile against API 36+. Override after each plugin
+ * finishes evaluating so their own android { compileSdk … } cannot win.
+ */
+fun org.gradle.api.Project.forceCompileSdk36() {
+    extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.let {
+        it.compileSdk = 36
+    }
+    extensions.findByType(com.android.build.gradle.AppExtension::class.java)?.let {
+        it.compileSdkVersion(36)
+    }
 }
+
 subprojects {
-    project.plugins.withId("com.android.library") {
-        project.extensions.configure<com.android.build.gradle.LibraryExtension> {
+    pluginManager.withPlugin("com.android.library") {
+        // Early pass (may be overwritten by the plugin's own build.gradle).
+        extensions.configure(com.android.build.gradle.LibraryExtension::class.java) {
             compileSdk = 36
         }
+    }
+    afterEvaluate {
+        forceCompileSdk36()
     }
 }
 

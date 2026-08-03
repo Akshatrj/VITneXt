@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vit_nextclass/core/models/holiday.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
-import 'package:vit_nextclass/core/services/class_live_sync.dart';
 import 'package:vit_nextclass/core/services/notification_scheduler.dart';
 import 'package:vit_nextclass/core/services/widget_bridge.dart';
 import 'package:vit_nextclass/features/timetable/providers/weekly_resolved_provider.dart';
@@ -18,19 +17,21 @@ final selectedDateProvider = StateProvider<DateTime>(
 
 // Resolved schedule for selected date
 final dayScheduleProvider = FutureProvider.family<List<ResolvedClass>, DateTime>((ref, date) async {
+  final now = DateTime.now();
+  final isToday =
+      date.year == now.year && date.month == now.month && date.day == now.day;
+
+  // Re-resolve every minute for today so statuses (current/next/completed) stay fresh.
+  if (isToday) {
+    ref.watch(currentTimeProvider);
+  }
+
   final resolver = ref.read(scheduleResolverProvider);
-  final schedule = await resolver.resolveSchedule(date);
+  final schedule = await resolver.resolveSchedule(date, now: now);
 
   // Update widget when today's schedule is loaded
-  final now = DateTime.now();
-  if (date.year == now.year && date.month == now.month && date.day == now.day) {
-    ResolvedClass? current;
-    ResolvedClass? next;
-    for (var cls in schedule) {
-      if (cls.status == ClassStatus.current) current = cls;
-      if (cls.status == ClassStatus.next) next = cls;
-    }
-    WidgetBridge.updateWidget(currentClass: current, nextClass: next);
+  if (isToday) {
+    refreshWidgetSchedule(ref);
   }
 
   return schedule;
@@ -53,10 +54,10 @@ final currentTimeProvider = StreamProvider<DateTime>((ref) async* {
 // Helper to get tomorrow's first class if no more classes today
 final tomorrowFirstClassProvider = FutureProvider<ResolvedClass?>((ref) async {
   final resolver = ref.read(scheduleResolverProvider);
-  final tomorrow = DateTime.now().add(const Duration(days: 1));
+  final tomorrow = normalizeScheduleDate(DateTime.now().add(const Duration(days: 1)));
   final schedule = await resolver.resolveSchedule(tomorrow);
-  if (schedule.isNotEmpty) {
-    return schedule.first;
+  for (final cls in schedule) {
+    if (cls.status != ClassStatus.cancelled) return cls;
   }
   return null;
 });
@@ -64,7 +65,7 @@ final tomorrowFirstClassProvider = FutureProvider<ResolvedClass?>((ref) async {
 // Helper to get tomorrow's holiday
 final tomorrowHolidayProvider = FutureProvider<Holiday?>((ref) async {
   final resolver = ref.read(scheduleResolverProvider);
-  final tomorrow = DateTime.now().add(const Duration(days: 1));
+  final tomorrow = normalizeScheduleDate(DateTime.now().add(const Duration(days: 1)));
   return resolver.getHolidayForDate(tomorrow);
 });
 
@@ -82,17 +83,44 @@ void invalidateTodaySchedule(WidgetRef ref) {
 }
 
 /// Push current/next class info to the Android home-screen widget.
-Future<void> refreshWidgetSchedule(WidgetRef ref) async {
-  final resolver = ref.read(scheduleResolverProvider);
-  final schedule = await resolver.resolveSchedule(DateTime.now());
-  ResolvedClass? current;
-  ResolvedClass? next;
-  for (final cls in schedule) {
-    if (cls.status == ClassStatus.current) current = cls;
-    if (cls.status == ClassStatus.next) next = cls;
+Future<void> refreshWidgetSchedule(dynamic ref) async {
+  try {
+    final resolver = ref.read(scheduleResolverProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final holidayToday = await resolver.getHolidayForDate(today);
+    final schedule = await resolver.resolveSchedule(now, now: now);
+
+    ResolvedClass? current;
+    ResolvedClass? next;
+
+    for (final cls in schedule) {
+      if (cls.status == ClassStatus.current) current = cls;
+      if (cls.status == ClassStatus.next) next = cls;
+    }
+
+    // Today only — never look ahead to tomorrow for the widget.
+    final queue = <WidgetQueueEntry>[];
+    for (final cls in schedule) {
+      if (cls.status == ClassStatus.completed) continue;
+      queue.add(WidgetQueueEntry(resolved: cls, scheduleDate: today));
+    }
+
+    final hidingHoliday = holidayToday != null && holidayToday.hidesClasses;
+    final noClassesToday = !hidingHoliday && schedule.isEmpty;
+    final dayComplete =
+        !hidingHoliday && !noClassesToday && current == null && next == null;
+
+    await WidgetBridge.updateWidget(
+      currentClass: current,
+      nextClass: next,
+      holidayToday: holidayToday,
+      upcomingQueue: queue,
+      dayComplete: dayComplete,
+      noClassesToday: noClassesToday,
+    );
+    await rescheduleClassNotifications(ref);
+  } catch (_) {
+    // Never let widget/notification refresh crash the UI.
   }
-  await WidgetBridge.updateWidget(currentClass: current, nextClass: next);
-  await rescheduleClassNotifications(ref);
-  invalidateClassLiveMonitorSync();
-  await syncClassLiveMonitor(ref);
 }

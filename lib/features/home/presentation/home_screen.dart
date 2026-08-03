@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+import 'package:vit_nextclass/core/models/holiday.dart';
+import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/features/home/providers/home_provider.dart';
 import 'package:vit_nextclass/features/home/presentation/widgets/dashboard_card.dart';
 import 'package:vit_nextclass/features/home/presentation/widgets/today_schedule_slider.dart';
-import 'package:vit_nextclass/core/providers/app_providers.dart';
-import 'package:vit_nextclass/widgets/app_scaffold.dart';
+import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -33,7 +35,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _currentPage = index;
     });
-    
+
     final now = DateTime.now();
     DateTime newDate;
     if (index == 0) {
@@ -47,6 +49,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Future.microtask(() {
       ref.read(selectedDateProvider.notifier).state = normalizeScheduleDate(newDate);
     });
+  }
+
+  Future<void> _markHolidayForDate(DateTime date) async {
+    final day = normalizeScheduleDate(date);
+    final isToday = day == normalizeScheduleDate(DateTime.now());
+    final nameController = TextEditingController(
+      text: isToday ? 'Holiday' : 'Holiday',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isToday ? 'Mark Today as Holiday' : 'Mark Tomorrow as Holiday'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            labelText: 'Holiday name',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    final label = nameController.text.trim();
+    nameController.dispose();
+    if (confirmed != true || label.isEmpty) return;
+
+    final semester = await ref.read(activeSemesterProvider.future);
+    final storage = ref.read(localStorageProvider);
+    // Avoid overlapping same-day holidays fighting each other.
+    await storage.deleteHolidaysCoveringDate(day, semesterId: semester?.id);
+
+    final holiday = Holiday(
+      id: const Uuid().v4(),
+      semesterId: semester?.id,
+      startDate: day,
+      endDate: day,
+      label: label,
+      type: HolidayType.university,
+      source: 'Manual',
+    );
+
+    await storage.saveHoliday(holiday);
+    ref.invalidate(holidaysProvider);
+    invalidateScheduleForDate(ref, day);
+    invalidateTodaySchedule(ref);
+    await refreshWidgetSchedule(ref);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Marked holiday: $label')),
+      );
+    }
+  }
+
+  Future<void> _removeHoliday(Holiday holiday) async {
+    await ref.read(localStorageProvider).deleteHoliday(holiday.id);
+    ref.invalidate(holidaysProvider);
+    invalidateScheduleForDate(ref, holiday.startDate);
+    invalidateTodaySchedule(ref);
+    await refreshWidgetSchedule(ref);
   }
 
   @override
@@ -74,16 +147,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     context,
                     ref,
                     normalizeScheduleDate(DateTime.now().subtract(const Duration(days: 1))),
+                    showHolidayAction: false,
+                    dayLabel: 'Yesterday',
                   ),
                   _buildDayContent(
                     context,
                     ref,
                     normalizeScheduleDate(DateTime.now()),
+                    showHolidayAction: true,
+                    dayLabel: 'Today',
                   ),
                   _buildDayContent(
                     context,
                     ref,
                     normalizeScheduleDate(DateTime.now().add(const Duration(days: 1))),
+                    showHolidayAction: true,
+                    dayLabel: 'Tomorrow',
                   ),
                 ],
               ),
@@ -94,25 +173,95 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildDayContent(BuildContext context, WidgetRef ref, DateTime selectedDate) {
+  Widget _buildHolidayAction(DateTime date, String dayLabel) {
+    final holidayAsync = ref.watch(dayHolidayProvider(date));
+    return holidayAsync.when(
+      data: (holiday) {
+        if (holiday != null) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.celebration,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$dayLabel is a holiday · ${holiday.label}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _removeHoliday(holiday),
+                  child: const Text('Remove'),
+                ),
+              ],
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _markHolidayForDate(date),
+              icon: const Icon(Icons.beach_access, size: 18),
+              label: Text('Mark $dayLabel as Holiday'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildDayContent(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime selectedDate, {
+    required bool showHolidayAction,
+    required String dayLabel,
+  }) {
     final scheduleAsync = ref.watch(dayScheduleProvider(selectedDate));
-    final currentTimeAsync = ref.watch(currentTimeProvider);
+    // Watch the tick so the dashboard rebuilds each minute, but always use a
+    // fresh wall-clock time (stream values can be stale after resume).
+    ref.watch(currentTimeProvider);
+    final currentTime = DateTime.now();
     final tomorrowFirstAsync = ref.watch(tomorrowFirstClassProvider);
     final tomorrowHolidayAsync = ref.watch(tomorrowHolidayProvider);
-
-    final currentTime = currentTimeAsync.value ?? DateTime.now();
+    final todayHolidayAsync = ref.watch(dayHolidayProvider(selectedDate));
 
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(dayScheduleProvider(selectedDate));
+        ref.invalidate(dayHolidayProvider(selectedDate));
       },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Dashboard Card
+            if (showHolidayAction) _buildHolidayAction(selectedDate, dayLabel),
             scheduleAsync.when(
+              skipLoadingOnReload: true,
               data: (schedule) {
                 return DashboardCard(
                   schedule: schedule,
@@ -120,35 +269,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   scheduleDate: selectedDate,
                   tomorrowFirstClass: tomorrowFirstAsync.value,
                   tomorrowHoliday: tomorrowHolidayAsync.value,
+                  todayHoliday: todayHolidayAsync.value,
                 );
               },
               loading: () => const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())),
-              error: (err, stack) => Center(child: Text('Something went wrong. Pull down to retry.')),
+              error: (err, stack) => const Center(child: Text('Something went wrong. Pull down to retry.')),
             ),
-            
             const SizedBox(height: 32),
-            
-            // Today's Schedule Section
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
-                "Today's Schedule",
+                "$dayLabel's Schedule",
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ),
             const SizedBox(height: 16),
-            
             scheduleAsync.when(
+              skipLoadingOnReload: true,
               data: (schedule) => TodayScheduleSlider(schedule: schedule, date: selectedDate),
               loading: () => const SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
               error: (err, stack) => const SizedBox(height: 180),
             ),
-            
             const SizedBox(height: 40),
-            
-            // Bottom Button
             Center(
               child: OutlinedButton.icon(
                 onPressed: () {

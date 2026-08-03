@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:vit_nextclass/core/models/schedule_override.dart';
-import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/constants/buildings.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/core/services/conflict_detector.dart';
@@ -11,7 +10,9 @@ import 'package:vit_nextclass/features/home/providers/home_provider.dart';
 import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
 
 class AddOverrideSheet extends ConsumerStatefulWidget {
-  const AddOverrideSheet({super.key});
+  const AddOverrideSheet({super.key, this.existing});
+
+  final ScheduleOverride? existing;
 
   @override
   ConsumerState<AddOverrideSheet> createState() => _AddOverrideSheetState();
@@ -20,9 +21,9 @@ class AddOverrideSheet extends ConsumerStatefulWidget {
 class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
   final _formKey = GlobalKey<FormState>();
 
-  OverrideType _selectedType = OverrideType.cancelled;
+  late OverrideType _selectedType;
   String? _selectedCourseId;
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   final TextEditingController _reasonController = TextEditingController();
 
   // For Extra/Modified
@@ -36,6 +37,34 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
   final TextEditingController _extraCodeController = TextEditingController();
   final TextEditingController _extraNameController = TextEditingController();
   final TextEditingController _extraFacultyController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _selectedType = existing?.type ?? OverrideType.cancelled;
+    _selectedCourseId = existing?.linkedCourseId;
+    _selectedDate = existing?.date ?? DateTime.now();
+    _reasonController.text = existing?.reason ?? '';
+    if (existing?.overrideStartHour != null && existing?.overrideStartMinute != null) {
+      _startTime = TimeOfDay(
+        hour: existing!.overrideStartHour!,
+        minute: existing.overrideStartMinute!,
+      );
+    }
+    if (existing?.overrideEndHour != null && existing?.overrideEndMinute != null) {
+      _endTime = TimeOfDay(
+        hour: existing!.overrideEndHour!,
+        minute: existing.overrideEndMinute!,
+      );
+    }
+    _selectedBuilding = existing?.overrideBuilding;
+    _selectedFloor = existing?.overrideFloor;
+    _roomController.text = existing?.overrideRoom ?? '';
+    _extraCodeController.text = existing?.extraCourseCode ?? '';
+    _extraNameController.text = existing?.extraCourseName ?? '';
+    _extraFacultyController.text = existing?.extraFaculty ?? '';
+  }
 
   @override
   void dispose() {
@@ -64,12 +93,12 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
           return;
         }
       }
-      
+
       // Conflict check for extra class
       if (_selectedType == OverrideType.extra && _startTime != null && _endTime != null) {
         final resolver = ref.read(scheduleResolverProvider);
         final schedule = await resolver.resolveSchedule(_selectedDate);
-        
+
         final conflicts = await ConflictDetector.checkOverrideConflicts(
           startHour: _startTime!.hour,
           startMinute: _startTime!.minute,
@@ -100,7 +129,7 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
     }
 
     final newOverride = ScheduleOverride(
-      id: const Uuid().v4(),
+      id: widget.existing?.id ?? const Uuid().v4(),
       date: _selectedDate,
       type: _selectedType,
       linkedCourseId: _selectedType != OverrideType.extra ? _selectedCourseId : null,
@@ -121,6 +150,7 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
     await storage.saveOverride(newOverride);
     ref.invalidate(overridesProvider);
     invalidateTodaySchedule(ref);
+    await refreshWidgetSchedule(ref);
 
     if (mounted) {
       Navigator.pop(context);
@@ -158,6 +188,8 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
   @override
   Widget build(BuildContext context) {
     final coursesAsync = ref.watch(coursesProvider);
+    // Include all courses — including those already cancelled for this date —
+    // so users can convert a cancel into a modified override or re-target.
     final courses = coursesAsync.valueOrNull ?? [];
     final bool isOnline = _selectedBuilding == Buildings.cr;
 
@@ -178,11 +210,11 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
               controller: scrollController,
               children: [
                 Text(
-                  'Schedule Override',
+                  widget.existing == null ? 'Schedule Override' : 'Edit Override',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 24),
-                
+
                 SegmentedButton<OverrideType>(
                   segments: const [
                     ButtonSegment(value: OverrideType.cancelled, label: Text('Cancel')),
@@ -197,7 +229,7 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
                   },
                 ),
                 const SizedBox(height: 24),
-                
+
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Date'),
@@ -214,7 +246,10 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
                       labelText: 'Select Course',
                       border: OutlineInputBorder(),
                     ),
-                    value: _selectedCourseId,
+                    value: _selectedCourseId != null &&
+                            courses.any((c) => c.id == _selectedCourseId)
+                        ? _selectedCourseId
+                        : null,
                     isExpanded: true,
                     items: courses.map((c) {
                       return DropdownMenuItem<String>(
@@ -316,13 +351,13 @@ class _AddOverrideSheetState extends ConsumerState<AddOverrideSheet> {
                   decoration: const InputDecoration(labelText: 'Reason (Optional)', border: OutlineInputBorder()),
                   maxLines: 2,
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 FilledButton(
                   onPressed: _saveOverride,
                   style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 56)),
-                  child: const Text('Save Override'),
+                  child: Text(widget.existing == null ? 'Save Override' : 'Update Override'),
                 ),
               ],
             ),

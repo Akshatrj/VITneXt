@@ -19,7 +19,8 @@ final overridesProvider = FutureProvider<List<ScheduleOverride>>((ref) async {
 
 final holidaysProvider = FutureProvider<List<Holiday>>((ref) async {
   final storage = ref.watch(localStorageProvider);
-  final allHolidays = await storage.getAllHolidays();
-  allHolidays.sort((a, b) => b.date.compareTo(a.date));
-  return allHolidays;
+  final active = await ref.watch(activeSemesterProvider.future);
+  final holidays = await storage.getHolidaysForSemester(active?.id);
+  holidays.sort((a, b) => b.startDate.compareTo(a.startDate));
+  return holidays;
 });

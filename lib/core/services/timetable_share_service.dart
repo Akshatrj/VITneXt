@@ -15,7 +15,7 @@ class TimetableShareService {
     final courses = await _storage.getActiveSemesterCourses();
 
     final buffer = StringBuffer();
-    buffer.writeln('VIT NextClass — FFCS Timetable');
+    buffer.writeln('VITneXt — FFCS Timetable');
     if (semester != null) {
       buffer.writeln('Semester: ${semester.name}');
     }
@@ -36,7 +36,7 @@ class TimetableShareService {
     buffer.writeln(_buildWeeklySummary(courses));
 
     buffer.writeln('');
-    buffer.writeln('Managed with VIT NextClass');
+    buffer.writeln('Managed with VITneXt');
     return buffer.toString();
   }
 

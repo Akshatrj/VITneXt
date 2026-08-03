@@ -43,13 +43,13 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((r
 });
 
 class NotificationMinutesNotifier extends StateNotifier<int> {
-  NotificationMinutesNotifier() : super(10) {
+  NotificationMinutesNotifier() : super(0) {
     _loadMinutes();
   }
 
   Future<void> _loadMinutes() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getInt('notification_minutes') ?? 10;
+    state = prefs.getInt('notification_minutes') ?? 0;
   }
 
   Future<void> setMinutes(int minutes) async {
@@ -66,53 +66,15 @@ final notificationMinutesProvider = StateNotifierProvider<NotificationMinutesNot
   return NotificationMinutesNotifier();
 });
 
-class LiveClassStatusNotifier extends StateNotifier<bool> {
-  LiveClassStatusNotifier() : super(false) {
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('live_class_status_enabled') ?? false;
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    state = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('live_class_status_enabled', enabled);
-  }
-}
-
-final liveClassStatusProvider =
-    StateNotifierProvider<LiveClassStatusNotifier, bool>((ref) {
-  return LiveClassStatusNotifier();
-});
-
-class AutoSilentDuringClassNotifier extends StateNotifier<bool> {
-  AutoSilentDuringClassNotifier() : super(false) {
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('auto_silent_during_class') ?? false;
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    state = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('auto_silent_during_class', enabled);
-  }
-}
-
-final autoSilentDuringClassProvider =
-    StateNotifierProvider<AutoSilentDuringClassNotifier, bool>((ref) {
-  return AutoSilentDuringClassNotifier();
-});
-
 final onboardingCompleteProvider = FutureProvider<bool>((ref) async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool('onboarding_complete') ?? false;
+  try {
+    final prefs = await SharedPreferences.getInstance()
+        .timeout(const Duration(seconds: 5));
+    return prefs.getBool('onboarding_complete') ?? false;
+  } catch (_) {
+    // Never hang on splash if prefs are slow/unavailable after process death.
+    return true;
+  }
 });
 
 final appNavIndexProvider = StateProvider<int>((ref) => 0);

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/models/holiday.dart';
+import 'package:vit_nextclass/core/services/app_log.dart';
 import 'package:vit_nextclass/core/theme/app_colors.dart';
+import 'package:vit_nextclass/core/utils/time_utils.dart';
 import 'package:vit_nextclass/widgets/cancel_class_sheet.dart';
 
 class DashboardCard extends ConsumerWidget {
@@ -11,6 +13,7 @@ class DashboardCard extends ConsumerWidget {
   final DateTime scheduleDate;
   final ResolvedClass? tomorrowFirstClass;
   final Holiday? tomorrowHoliday;
+  final Holiday? todayHoliday;
 
   const DashboardCard({
     super.key,
@@ -19,46 +22,152 @@ class DashboardCard extends ConsumerWidget {
     required this.scheduleDate,
     this.tomorrowFirstClass,
     this.tomorrowHoliday,
+    this.todayHoliday,
   });
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Find states based on current time
+    final isToday = _isSameDay(scheduleDate, currentTime);
+    final isTomorrow = _isSameDay(
+      scheduleDate,
+      DateTime(currentTime.year, currentTime.month, currentTime.day)
+          .add(const Duration(days: 1)),
+    );
+    final isPastDay = scheduleDate.isBefore(
+          DateTime(currentTime.year, currentTime.month, currentTime.day),
+        ) &&
+        !isToday;
+
+    // Holiday with no classes for this day.
+    if (schedule.isEmpty && todayHoliday != null && todayHoliday!.hidesClasses) {
+      return _buildHolidayCard(context, todayHoliday!);
+    }
+
+    if (schedule.isEmpty) {
+      return _buildNoClassesScheduledCard(context, isToday: isToday, isTomorrow: isTomorrow);
+    }
+
     ResolvedClass? currentClass;
     ResolvedClass? nextClass;
     ResolvedClass? recentlyCancelled;
 
-    for (var cls in schedule) {
-      if (cls.isCurrentlyRunning(currentTime)) {
-        if (cls.status == ClassStatus.cancelled) {
-          recentlyCancelled = cls;
-        } else {
-          currentClass = cls;
-        }
-      } else if (cls.isUpcoming(currentTime) && nextClass == null) {
-        if (cls.status != ClassStatus.cancelled) {
+    if (isToday) {
+      for (final cls in schedule) {
+        // Never surface completed classes as current/next.
+        if (cls.status == ClassStatus.completed) continue;
+
+        if (cls.isCurrentlyRunning(currentTime)) {
+          if (cls.status == ClassStatus.cancelled) {
+            recentlyCancelled = cls;
+          } else {
+            currentClass = cls;
+          }
+        } else if (cls.isUpcoming(currentTime) &&
+            nextClass == null &&
+            cls.status != ClassStatus.cancelled) {
           nextClass = cls;
         }
       }
-    }
-
-    // Fallback if no classes are running but we have an upcoming cancelled class
-    if (currentClass == null && recentlyCancelled == null && nextClass == null) {
-      // Just check if any class was cancelled today
-      try {
-        recentlyCancelled = schedule.firstWhere((c) => c.status == ClassStatus.cancelled && c.isUpcoming(currentTime));
-      } catch (_) {}
+    } else if (isTomorrow) {
+      // Tomorrow: show the first active class as "next", never compare against today's clock.
+      for (final cls in schedule) {
+        if (cls.status == ClassStatus.cancelled) continue;
+        nextClass = cls;
+        break;
+      }
+    } else if (isPastDay) {
+      // Yesterday: day is over.
+      currentClass = null;
+      nextClass = null;
     }
 
     if (currentClass != null) {
       return _buildCurrentClassCard(context, ref, currentClass);
-    } else if (recentlyCancelled != null && nextClass != null) {
-      return _buildCancelledCard(context, ref, recentlyCancelled, nextClass);
-    } else if (nextClass != null) {
-      return _buildNextClassCard(context, ref, nextClass);
-    } else {
-      return _buildNoMoreClassesCard(context);
     }
+    if (recentlyCancelled != null && nextClass != null) {
+      return _buildCancelledCard(context, ref, recentlyCancelled, nextClass);
+    }
+    if (nextClass != null) {
+      return _buildNextClassCard(context, ref, nextClass, isToday: isToday);
+    }
+
+    // All classes finished (or cancelled) for this day.
+    AppLog.instance.info('home', 'Showing no-more-classes card', data: {
+      'date': scheduleDate.toIso8601String(),
+      'isToday': isToday,
+      'count': schedule.length,
+    });
+    return _buildNoMoreClassesCard(context, isToday: isToday);
+  }
+
+  Widget _buildHolidayCard(BuildContext context, Holiday holiday) {
+    final theme = Theme.of(context);
+    return _buildBaseCard(
+      context: context,
+      building: 'Other',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            holiday.isExam ? 'EXAM DAY' : 'HOLIDAY',
+            style: _headerStyle(theme),
+          ),
+          const SizedBox(height: 12),
+          Text(holiday.label, style: _titleStyle(theme)),
+          const SizedBox(height: 8),
+          Text(
+            holiday.isExam
+                ? 'Good luck with your exams! No regular classes today.'
+                : 'No classes today.',
+            style: _subtitleStyle(theme),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoClassesScheduledCard(
+    BuildContext context, {
+    required bool isToday,
+    required bool isTomorrow,
+  }) {
+    final theme = Theme.of(context);
+    final title = isToday
+        ? 'No Classes Today'
+        : isTomorrow
+            ? 'No Classes Tomorrow'
+            : 'No Classes';
+    return _buildBaseCard(
+      context: context,
+      building: 'Other',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: _titleStyle(theme)),
+          const SizedBox(height: 12),
+          Text(
+            'Nothing is scheduled for this day.',
+            style: _subtitleStyle(theme),
+          ),
+          if (isToday) ...[
+            const SizedBox(height: 20),
+            if (tomorrowHoliday != null)
+              Text(
+                'Tomorrow is ${tomorrowHoliday!.label} — no classes',
+                style: _subtitleStyle(theme),
+              )
+            else if (tomorrowFirstClass != null)
+              Text(
+                'Tomorrow: ${tomorrowFirstClass!.courseCode} at ${tomorrowFirstClass!.startTimeFormatted}',
+                style: _subtitleStyle(theme),
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildCurrentClassCard(BuildContext context, WidgetRef ref, ResolvedClass cls) {
@@ -78,8 +187,7 @@ class DashboardCard extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('CURRENT CLASS', style: _headerStyle(theme)),
-              if (cls.isOverride)
-                Text('[Today only]', style: _headerStyle(theme)),
+              if (cls.isOverride) Text('[Today only]', style: _headerStyle(theme)),
             ],
           ),
           const SizedBox(height: 16),
@@ -95,7 +203,7 @@ class DashboardCard extends ConsumerWidget {
               Expanded(
                 child: Text('📍 ${cls.classroomFull}', style: _locationStyle(theme)),
               ),
-              Text('Ends in $minsLeft minutes', style: _timerStyle(theme)),
+              Text('Ends in ${TimeUtils.formatDuration(minsLeft)}', style: _timerStyle(theme)),
             ],
           ),
         ],
@@ -103,9 +211,14 @@ class DashboardCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildNextClassCard(BuildContext context, WidgetRef ref, ResolvedClass cls) {
+  Widget _buildNextClassCard(
+    BuildContext context,
+    WidgetRef ref,
+    ResolvedClass cls, {
+    required bool isToday,
+  }) {
     final theme = Theme.of(context);
-    final minsUntil = cls.minutesUntilStart(currentTime);
+    final minsUntil = isToday ? cls.minutesUntilStart(currentTime) : null;
 
     return _buildBaseCard(
       context: context,
@@ -116,7 +229,7 @@ class DashboardCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('NEXT CLASS', style: _headerStyle(theme)),
+          Text(isToday ? 'NEXT CLASS' : 'FIRST CLASS', style: _headerStyle(theme)),
           const SizedBox(height: 16),
           Text(cls.courseCode, style: _titleStyle(theme)),
           Text(cls.courseName, style: _subtitleStyle(theme)),
@@ -130,7 +243,11 @@ class DashboardCard extends ConsumerWidget {
               Expanded(
                 child: Text('📍 ${cls.classroomFull}', style: _locationStyle(theme)),
               ),
-              Text('Starts in $minsUntil minutes', style: _timerStyle(theme)),
+              if (minsUntil != null)
+                Text(
+                  'Starts in ${TimeUtils.formatDuration(minsUntil)}',
+                  style: _timerStyle(theme),
+                ),
             ],
           ),
         ],
@@ -178,7 +295,7 @@ class DashboardCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildNoMoreClassesCard(BuildContext context) {
+  Widget _buildNoMoreClassesCard(BuildContext context, {required bool isToday}) {
     final theme = Theme.of(context);
 
     return _buildBaseCard(
@@ -187,20 +304,31 @@ class DashboardCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('No More Classes Today 🎉', style: _titleStyle(theme)),
+          Text(
+            isToday ? 'No More Classes Today' : 'No Classes Left',
+            style: _titleStyle(theme),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isToday ? 'You are done for the day.' : 'All classes for this day are finished.',
+            style: _subtitleStyle(theme),
+          ),
           const SizedBox(height: 24),
-          if (tomorrowHoliday != null) ...[
-            Text('Tomorrow is ${tomorrowHoliday!.label} 🎊 - No classes', style: _subtitleStyle(theme)),
-          ] else if (tomorrowFirstClass != null) ...[
+          if (isToday && tomorrowHoliday != null) ...[
+            Text(
+              'Tomorrow is ${tomorrowHoliday!.label} — No classes',
+              style: _subtitleStyle(theme),
+            ),
+          ] else if (isToday && tomorrowFirstClass != null) ...[
             Text("Tomorrow's First Class", style: _headerStyle(theme)),
             const SizedBox(height: 8),
             Text(
-              '${tomorrowFirstClass!.courseCode} • ${tomorrowFirstClass!.startTimeFormatted} • ${tomorrowFirstClass!.classroom}',
+              '${tomorrowFirstClass!.courseCode} | ${tomorrowFirstClass!.startTimeFormatted} | ${tomorrowFirstClass!.classroom}',
               style: _subtitleStyle(theme).copyWith(fontWeight: FontWeight.bold, color: Colors.white),
             ),
-          ] else ...[
+          ] else if (isToday) ...[
             Text('No classes scheduled for tomorrow.', style: _subtitleStyle(theme)),
-          ]
+          ],
         ],
       ),
     );
@@ -237,34 +365,33 @@ class DashboardCard extends ConsumerWidget {
     );
   }
 
-  // Styles
   TextStyle _headerStyle(ThemeData theme) => theme.textTheme.labelMedium!.copyWith(
-    color: Colors.white.withValues(alpha: 0.8),
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.2,
-  );
+        color: Colors.white.withValues(alpha: 0.8),
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.2,
+      );
 
   TextStyle _titleStyle(ThemeData theme) => theme.textTheme.headlineSmall!.copyWith(
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-  );
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+      );
 
   TextStyle _subtitleStyle(ThemeData theme) => theme.textTheme.titleMedium!.copyWith(
-    color: Colors.white.withValues(alpha: 0.9),
-  );
+        color: Colors.white.withValues(alpha: 0.9),
+      );
 
   TextStyle _timeStyle(ThemeData theme) => theme.textTheme.titleSmall!.copyWith(
-    color: Colors.white,
-    fontWeight: FontWeight.w600,
-  );
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+      );
 
   TextStyle _locationStyle(ThemeData theme) => theme.textTheme.titleSmall!.copyWith(
-    color: Colors.white,
-    fontWeight: FontWeight.w600,
-  );
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+      );
 
   TextStyle _timerStyle(ThemeData theme) => theme.textTheme.titleSmall!.copyWith(
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-  );
+        color: Colors.white,
+        fontWeight: FontWeight.bold,
+      );
 }

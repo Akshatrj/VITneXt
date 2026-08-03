@@ -45,12 +45,12 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
     );
   }
 
-  void _showAddOverrideSheet() {
+  void _showAddOverrideSheet({ScheduleOverride? existing}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => const AddOverrideSheet(),
+      builder: (context) => AddOverrideSheet(existing: existing),
     );
   }
 
@@ -141,29 +141,34 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
                 await storage.deleteOverride(override.id);
                 ref.invalidate(overridesProvider);
                 invalidateTodaySchedule(ref);
+                await refreshWidgetSchedule(ref);
               },
               child: Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 elevation: 0,
                 color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildOverrideBadge(override.type),
-                          Text(
-                            DateFormat('EEE, MMM d, yyyy').format(override.date),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildOverrideContent(override),
-                    ],
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _showAddOverrideSheet(existing: override),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildOverrideBadge(override.type),
+                            Text(
+                              DateFormat('EEE, MMM d, yyyy').format(override.date),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildOverrideContent(override),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -223,8 +228,13 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
         Text(courseTitle, style: theme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         if (override.type == OverrideType.modified || override.type == OverrideType.extra) ...[
           const SizedBox(height: 4),
-          if (override.overrideStartHour != null)
-            Text('Time: ${TimeOfDay(hour: override.overrideStartHour!, minute: override.overrideStartMinute!).format(context)} - ${TimeOfDay(hour: override.overrideEndHour!, minute: override.overrideEndMinute!).format(context)}'),
+          if (override.overrideStartHour != null &&
+              override.overrideStartMinute != null &&
+              override.overrideEndHour != null &&
+              override.overrideEndMinute != null)
+            Text(
+              'Time: ${TimeOfDay(hour: override.overrideStartHour!, minute: override.overrideStartMinute!).format(context)} - ${TimeOfDay(hour: override.overrideEndHour!, minute: override.overrideEndMinute!).format(context)}',
+            ),
           if (override.overrideClassroom != null)
             Text('Room: ${override.overrideClassroom}'),
         ],
@@ -263,6 +273,7 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
                 await storage.deleteHoliday(holiday.id);
                 ref.invalidate(holidaysProvider);
                 invalidateTodaySchedule(ref);
+                await refreshWidgetSchedule(ref);
               },
               child: Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -273,7 +284,9 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
                     child: Icon(Icons.celebration),
                   ),
                   title: Text(holiday.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(DateFormat('EEEE, MMMM d, yyyy').format(holiday.date)),
+                  subtitle: Text(
+                    _holidaySubtitle(holiday),
+                  ),
                 ),
               ),
             );
@@ -296,5 +309,15 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
         ],
       ),
     );
+  }
+
+  String _holidaySubtitle(Holiday holiday) {
+    final sameDay = holiday.startDate.year == holiday.endDate.year &&
+        holiday.startDate.month == holiday.endDate.month &&
+        holiday.startDate.day == holiday.endDate.day;
+    final datePart = sameDay
+        ? DateFormat('EEEE, MMMM d, yyyy').format(holiday.startDate)
+        : '${DateFormat('MMM d').format(holiday.startDate)} – ${DateFormat('MMM d, yyyy').format(holiday.endDate)}';
+    return '$datePart · ${holiday.type.label}';
   }
 }

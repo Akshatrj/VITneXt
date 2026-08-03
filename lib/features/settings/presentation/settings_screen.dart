@@ -1,19 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:vit_nextclass/core/providers/app_providers.dart';
-import 'package:vit_nextclass/core/services/class_focus_bridge.dart';
+import 'package:vit_nextclass/core/services/app_log.dart';
+import 'package:vit_nextclass/core/services/backup_export_service.dart';
 import 'package:vit_nextclass/core/services/notification_scheduler.dart';
 import 'package:vit_nextclass/core/services/timetable_share_service.dart';
+import 'package:vit_nextclass/features/holidays/presentation/holiday_manager_screen.dart';
 import 'package:vit_nextclass/features/settings/presentation/widgets/theme_selector.dart';
 import 'package:vit_nextclass/features/settings/presentation/widgets/semester_switcher.dart';
 import 'package:vit_nextclass/features/settings/presentation/widgets/about_section.dart';
+import 'package:vit_nextclass/features/settings/presentation/widgets/reliability_settings.dart';
 import 'package:vit_nextclass/features/settings/providers/settings_provider.dart';
 import 'package:vit_nextclass/features/home/providers/home_provider.dart';
 import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
@@ -46,12 +49,12 @@ class SettingsScreen extends ConsumerWidget {
           _buildNotificationsSection(context, ref),
           const SizedBox(height: 16),
 
-          _buildSectionHeader(context, 'Class Focus'),
-          _buildClassFocusSection(context, ref),
-          const SizedBox(height: 16),
-
           _buildSectionHeader(context, 'Home Screen Widget'),
           _buildWidgetSection(context),
+          const SizedBox(height: 16),
+
+          _buildSectionHeader(context, 'Reliability'),
+          const ReliabilitySettingsCard(),
           const SizedBox(height: 16),
 
           _buildSectionHeader(context, 'Semester'),
@@ -152,84 +155,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildClassFocusSection(BuildContext context, WidgetRef ref) {
-    final liveStatus = ref.watch(liveClassStatusProvider);
-    final autoSilent = ref.watch(autoSilentDuringClassProvider);
-    final theme = Theme.of(context);
-
-    return Card(
-      elevation: 0,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: Icon(Icons.circle_notifications_outlined, color: theme.colorScheme.primary),
-            title: const Text('Live class status'),
-            subtitle: const Text(
-              'Shows your ongoing class on the status bar / notification area (like Dynamic Island on supported devices)',
-            ),
-            trailing: Switch(
-              value: liveStatus,
-              onChanged: (value) async {
-                if (value) {
-                  final status = await Permission.notification.request();
-                  if (!status.isGranted) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Notification permission is required for live class status'),
-                        ),
-                      );
-                    }
-                    return;
-                  }
-                }
-                await ref.read(liveClassStatusProvider.notifier).setEnabled(value);
-              },
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.vibration, color: theme.colorScheme.primary),
-            title: const Text('Silent + vibrate during class'),
-            subtitle: const Text(
-              'Automatically switches to vibrate-only while a class is in progress, then restores your previous sound mode',
-            ),
-            trailing: Switch(
-              value: autoSilent,
-              onChanged: (value) async {
-                if (value) {
-                  final canModify = await ClassFocusBridge.canModifyRingerMode();
-                  if (!canModify && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Could not change sound mode. Open sound settings to allow the app.',
-                        ),
-                        action: SnackBarAction(
-                          label: 'Settings',
-                          onPressed: () => ClassFocusBridge.openSoundSettings(),
-                        ),
-                      ),
-                    );
-                  }
-                }
-                await ref.read(autoSilentDuringClassProvider.notifier).setEnabled(value);
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(
-              'Runs offline with no network access. Only class times are stored in the native monitor; course names stay in the app. The foreground service runs during class (and briefly before class for live status), not all day — alarms wake it at start/end times to save battery.',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildWidgetSection(BuildContext context) {
     return Card(
       elevation: 0,
@@ -244,7 +169,7 @@ class SettingsScreen extends ConsumerWidget {
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
-                    'Add the VIT NextClass widget to your home screen',
+                    'Add the VITneXt widget to your home screen',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -254,8 +179,10 @@ class SettingsScreen extends ConsumerWidget {
             const Text(
               '1. Long-press your home screen\n'
               '2. Tap Widgets\n'
-              '3. Find VIT NextClass → add "Shows your current or next class"\n'
-              '4. Tap widget to open app · "Cancel next class" marks it cancelled by teacher',
+              '3. Find VITneXt → add "Shows your current or next class"\n'
+              '4. Tap widget to open app · Next cycles classes · Cancel/Restore toggles the next class\n\n'
+              'OnePlus Shelf: open Shelf → + → Widgets → pick VITneXt '
+              '(supported on modern OxygenOS Shelf that allows app widgets).',
               style: TextStyle(height: 1.5),
             ),
           ],
@@ -270,6 +197,17 @@ class SettingsScreen extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
+          ListTile(
+            leading: const Icon(Icons.beach_access),
+            title: const Text('Holiday Manager'),
+            subtitle: const Text('Calendar, bulk holidays, academic import'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HolidayManagerScreen()),
+              );
+            },
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.share),
             title: const Text('Share Timetable'),
@@ -291,14 +229,14 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.upload_file),
             title: const Text('Export Timetable'),
-            subtitle: const Text('Save all your data to a JSON file'),
+            subtitle: const Text('Save backup JSON to Downloads'),
             onTap: () => _exportData(context, ref),
           ),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.download),
             title: const Text('Import Timetable'),
-            subtitle: const Text('Load data from a JSON file'),
+            subtitle: const Text('Load data from a JSON or CSV file'),
             onTap: () => _importData(context, ref),
           ),
         ],
@@ -337,76 +275,103 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _exportData(BuildContext context, WidgetRef ref) async {
-    final storage = ref.read(localStorageProvider);
     try {
-      final data = await storage.exportAll();
-      final jsonString = jsonEncode(data);
-
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/vit_nextclass_backup.json');
-      await file.writeAsString(jsonString);
+      final service = BackupExportService(ref.read(localStorageProvider));
+      final path = await service.exportToDownloads();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Exported to ${file.path}')),
+          SnackBar(
+            content: Text('Saved to Downloads:\n$path'),
+            action: SnackBarAction(
+              label: 'Share',
+              onPressed: () {
+                service.shareBackup();
+              },
+            ),
+          ),
         );
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
-        );
+      // If direct Downloads write fails, fall back to share sheet.
+      try {
+        final service = BackupExportService(ref.read(localStorageProvider));
+        await service.shareBackup();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Choose Files / Downloads in the share sheet to save')),
+          );
+        }
+      } catch (shareError) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Export failed: $shareError')),
+          );
+        }
       }
     }
   }
 
   Future<void> _importData(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Import Data'),
-        content: const Text('This will import data from the backup file in your app directory. Are you sure?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Import'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/vit_nextclass_backup.json');
+      AppLog.instance.info('import', 'file picker opened');
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json', 'csv'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        AppLog.instance.info('import', 'cancelled');
+        return;
+      }
 
-      if (!await file.exists()) {
+      final picked = result.files.single;
+      final ext = (picked.extension ?? '').toLowerCase();
+      AppLog.instance.info('import', 'file selected', data: {
+        'name': picked.name,
+        'ext': ext,
+        'bytes': picked.bytes?.length,
+      });
+
+      if (ext != 'json') {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No backup file found')),
+            const SnackBar(
+              content: Text('Timetable backup import supports JSON. Use Holiday Manager for calendar CSV.'),
+            ),
           );
         }
         return;
       }
 
-      final jsonString = await file.readAsString();
+      String jsonString;
+      if (picked.bytes != null) {
+        jsonString = utf8.decode(picked.bytes!);
+      } else if (picked.path != null) {
+        jsonString = await File(picked.path!).readAsString();
+      } else {
+        throw Exception('Could not read selected file');
+      }
+
       final storage = ref.read(localStorageProvider);
       final data = jsonDecode(jsonString) as Map<String, dynamic>;
       await storage.importAll(data);
 
       ref.invalidate(allSemestersProvider);
       ref.invalidate(activeSemesterProvider);
+      ref.invalidate(coursesProvider);
+      ref.invalidate(overridesProvider);
+      ref.invalidate(holidaysProvider);
+      invalidateTodaySchedule(ref);
+      await refreshWidgetSchedule(ref);
 
+      AppLog.instance.info('import', 'timetable import success');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Import successful')),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLog.instance.error('import', 'timetable import failed', error: e, stackTrace: st);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Import failed: $e')),
@@ -454,6 +419,7 @@ class SettingsScreen extends ConsumerWidget {
       await storage.resetSemester(activeSemester.id);
       ref.invalidate(coursesProvider);
       ref.invalidate(overridesProvider);
+      ref.invalidate(holidaysProvider);
       invalidateTodaySchedule(ref);
       await refreshWidgetSchedule(ref);
 

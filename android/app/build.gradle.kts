@@ -15,8 +15,8 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace = "com.vitnextclass.vit_nextclass"
-    compileSdk = flutter.compileSdkVersion
+    namespace = "com.vitnext.vitnext"
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.vitnextclass.vit_nextclass"
+        applicationId = "com.vitnext.vitnext"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

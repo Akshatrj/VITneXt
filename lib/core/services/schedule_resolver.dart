@@ -16,9 +16,9 @@ class ScheduleResolver {
     final activeSemester = await _storage.getActiveSemester();
     if (activeSemester == null) return [];
 
-    // 3. Check for holiday
+    // 3. Check for holiday / academic event (hides classes)
     final holiday = await getHolidayForDate(date);
-    if (holiday != null) return [];
+    if (holiday != null && holiday.hidesClasses) return [];
 
     // 4. Get active semester courses
     final courses = await _storage.getActiveSemesterCourses();

@@ -27,7 +27,7 @@ class MockLocalStorage implements LocalStorage {
   Future<List<ScheduleOverride>> getOverridesForDate(DateTime date) async => overrides;
 
   @override
-  Future<Holiday?> getHolidayForDate(DateTime date) async => holiday;
+  Future<Holiday?> getHolidayForDate(DateTime date, {String? semesterId}) async => holiday;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

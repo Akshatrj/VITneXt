@@ -40,7 +40,7 @@ class WelcomeStep extends StatelessWidget {
           ),
           const SizedBox(height: 48),
           Text(
-            'VIT NextClass',
+            'VITneXt',
             style: theme.textTheme.displaySmall?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface,

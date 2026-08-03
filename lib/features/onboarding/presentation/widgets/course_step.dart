@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/constants/buildings.dart';
-import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/features/manage/presentation/widgets/add_course_sheet.dart';
 
 class CourseStep extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
+  final VoidCallback? onBack;
 
   const CourseStep({
     super.key,
     required this.onComplete,
+    this.onBack,
   });
 
   @override
@@ -23,7 +23,6 @@ class CourseStep extends ConsumerStatefulWidget {
 class _CourseStepState extends ConsumerState<CourseStep> {
   List<Course> _courses = [];
   bool _isLoading = true;
-  Semester? _activeSemester;
 
   @override
   void initState() {
@@ -41,7 +40,6 @@ class _CourseStepState extends ConsumerState<CourseStep> {
     
     if (mounted) {
       setState(() {
-        _activeSemester = semester;
         _courses = courses;
         _isLoading = false;
       });
@@ -71,7 +69,17 @@ class _CourseStepState extends ConsumerState<CourseStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 16),
+          if (widget.onBack != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back',
+              ),
+            )
+          else
+            const SizedBox(height: 16),
           Text(
             'Add your courses',
             style: theme.textTheme.displaySmall?.copyWith(
@@ -194,7 +202,7 @@ class _CourseStepState extends ConsumerState<CourseStep> {
               course.name,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text('${course.code} â€¢ ${course.ffcsSlot}\n${course.classroomFull}'),
+            subtitle: Text('${course.code} | ${course.ffcsSlot}\n${course.classroomFull}'),
             isThreeLine: true,
           ),
         );

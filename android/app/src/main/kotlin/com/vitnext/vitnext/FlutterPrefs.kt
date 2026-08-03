@@ -1,4 +1,4 @@
-package com.vitnextclass.vit_nextclass
+package com.vitnext.vitnext
 
 import android.content.SharedPreferences
 

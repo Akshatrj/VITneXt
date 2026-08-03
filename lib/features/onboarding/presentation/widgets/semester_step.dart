@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
-import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 
 class SemesterStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
+  final VoidCallback? onBack;
 
   const SemesterStep({
     super.key,
     required this.onNext,
+    this.onBack,
   });
 
   @override
@@ -95,6 +96,15 @@ class _SemesterStepState extends ConsumerState<SemesterStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.onBack != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back',
+              ),
+            ),
           const Spacer(flex: 1),
           Icon(
             Icons.date_range_rounded,

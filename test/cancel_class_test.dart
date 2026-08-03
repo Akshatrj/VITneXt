@@ -27,7 +27,7 @@ class _TestStorage implements LocalStorage {
   }
 
   @override
-  Future<Holiday?> getHolidayForDate(DateTime date) async => null;
+  Future<Holiday?> getHolidayForDate(DateTime date, {String? semesterId}) async => null;
 
   @override
   Future<void> saveOverride(ScheduleOverride override_) async {

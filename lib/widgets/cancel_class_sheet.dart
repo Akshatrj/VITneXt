@@ -129,12 +129,21 @@ class _CancelClassSheetState extends ConsumerState<CancelClassSheet> {
       await storage.saveOverride(override);
       ref.invalidate(overridesProvider);
       invalidateScheduleForDate(ref, widget.date);
-      await refreshWidgetSchedule(ref);
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${widget.cls.courseCode} marked as cancelled')),
+        );
+      }
+
+      try {
+        await refreshWidgetSchedule(ref);
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to cancel class: $e')),
         );
       }
     } finally {
@@ -156,12 +165,21 @@ class _CancelClassSheetState extends ConsumerState<CancelClassSheet> {
       await storage.deleteOverride(existing.id);
       ref.invalidate(overridesProvider);
       invalidateScheduleForDate(ref, widget.date);
-      await refreshWidgetSchedule(ref);
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${widget.cls.courseCode} restored to schedule')),
+        );
+      }
+
+      try {
+        await refreshWidgetSchedule(ref);
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to restore class: $e')),
         );
       }
     } finally {

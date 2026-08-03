@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vit_nextclass/features/calendar/providers/calendar_provider.dart';
 import 'package:vit_nextclass/core/theme/app_colors.dart';
+import 'package:vit_nextclass/core/models/holiday.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/widgets/cancel_class_sheet.dart';
@@ -53,11 +54,16 @@ class DayDetailSheet extends ConsumerWidget {
                       }
                       final holiday = snapshot.data;
                       if (holiday != null) {
+                        final noClasses = holiday.hidesClasses;
                         return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.celebration, size: 64, color: theme.colorScheme.error),
+                              Icon(
+                                holiday.isExam ? Icons.edit_note : Icons.celebration,
+                                size: 64,
+                                color: theme.colorScheme.error,
+                              ),
                               const SizedBox(height: 16),
                               Text(
                                 holiday.label,
@@ -67,7 +73,14 @@ class DayDetailSheet extends ConsumerWidget {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text('It\'s a holiday! No classes today.'),
+                              Text(
+                                noClasses
+                                    ? (holiday.isExam
+                                        ? 'Exam period — regular classes are off.'
+                                        : "It's a holiday! No classes today.")
+                                    : '${holiday.type.label} — classes may still run.',
+                                textAlign: TextAlign.center,
+                              ),
                             ],
                           ),
                         );

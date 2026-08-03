@@ -32,7 +32,7 @@ final calendarEventsProvider =
     final date = DateTime(month.year, month.month, i);
     final schedule = await resolver.resolveSchedule(date);
     final holiday = await resolver.getHolidayForDate(date);
-    final isHoliday = holiday != null;
+    final isHoliday = holiday != null && holiday.hidesClasses;
 
     final cancelledCount =
         schedule.where((c) => c.status == ClassStatus.cancelled).length;

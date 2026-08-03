@@ -24,7 +24,7 @@ class AboutSection extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'VIT NextClass',
+              'VITneXt',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
