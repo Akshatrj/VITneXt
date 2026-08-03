@@ -3,6 +3,7 @@ import 'package:vit_nextclass/core/models/holiday.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/core/services/notification_scheduler.dart';
+import 'package:vit_nextclass/core/services/class_live_sync.dart';
 import 'package:vit_nextclass/core/services/widget_bridge.dart';
 import 'package:vit_nextclass/features/timetable/providers/weekly_resolved_provider.dart';
 
@@ -119,6 +120,8 @@ Future<void> refreshWidgetSchedule(dynamic ref) async {
       dayComplete: dayComplete,
       noClassesToday: noClassesToday,
     );
+    invalidateClassLiveMonitorSync();
+    await syncClassLiveMonitor(ref);
     await rescheduleClassNotifications(ref);
   } catch (_) {
     // Never let widget/notification refresh crash the UI.

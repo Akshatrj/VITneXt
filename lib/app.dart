@@ -7,6 +7,7 @@ import 'package:vit_nextclass/core/services/widget_health_monitor.dart';
 import 'package:vit_nextclass/core/theme/app_theme.dart';
 import 'package:vit_nextclass/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:vit_nextclass/widgets/app_scaffold.dart';
+import 'package:vit_nextclass/widgets/class_focus_handler.dart';
 import 'package:vit_nextclass/widgets/notification_permission_prompt.dart';
 import 'package:vit_nextclass/widgets/widget_action_handler.dart';
 
@@ -51,7 +52,9 @@ class VITNextClassApp extends ConsumerWidget {
               return const OnboardingScreen();
             }
             return const NotificationPermissionPrompt(
-              child: WidgetActionHandler(child: AppScaffold()),
+              child: ClassFocusHandler(
+                child: WidgetActionHandler(child: AppScaffold()),
+              ),
             );
           },
           loading: () => const Scaffold(
@@ -60,7 +63,9 @@ class VITNextClassApp extends ConsumerWidget {
           error: (e, st) {
             AppLog.instance.error('nav', 'onboarding provider error', error: e, stackTrace: st);
             return const NotificationPermissionPrompt(
-              child: WidgetActionHandler(child: AppScaffold()),
+              child: ClassFocusHandler(
+                child: WidgetActionHandler(child: AppScaffold()),
+              ),
             );
           },
         ),

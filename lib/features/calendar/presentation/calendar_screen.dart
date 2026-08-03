@@ -51,7 +51,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             calendarBuilders: CalendarBuilders(
               markerBuilder: (context, date, events) {
                 if (events.isEmpty) return null;
-                final info = events.first as CalendarDayInfo;
+                final info = events.first;
 
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,

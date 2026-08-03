@@ -16,9 +16,16 @@ class ScheduleResolver {
     final activeSemester = await _storage.getActiveSemester();
     if (activeSemester == null) return [];
 
-    // 3. Check for holiday / academic event (hides classes)
+    // 3. Holidays that hide classes clear the schedule unless overrides exist
+    // (e.g. extra class on a marked holiday).
     final holiday = await getHolidayForDate(date);
-    if (holiday != null && holiday.hidesClasses) return [];
+    final overrides = await _storage.getOverridesForDate(date);
+    final overridesImplyClasses = overrides.any(
+      (o) => o.type == OverrideType.extra || o.type == OverrideType.modified,
+    );
+    if (holiday != null && holiday.hidesClasses && !overridesImplyClasses) {
+      return [];
+    }
 
     // 4. Get active semester courses
     final courses = await _storage.getActiveSemesterCourses();
@@ -50,10 +57,7 @@ class ScheduleResolver {
       }
     }
 
-    // 7. Get overrides for this date
-    final overrides = await _storage.getOverridesForDate(date);
-
-    // 8. Apply overrides
+    // 7. Apply overrides (already loaded above)
     for (var override_ in overrides) {
       if (override_.type == OverrideType.cancelled) {
         // Mark matching course entries as cancelled

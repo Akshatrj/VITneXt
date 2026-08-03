@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const Color _seedColor = Color(0xFF006B5E);
@@ -13,29 +12,29 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: colorScheme.background,
-      textTheme: _textTheme(colorScheme.onBackground),
+      scaffoldBackgroundColor: colorScheme.surface,
+      textTheme: _textTheme(colorScheme.onSurface),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.outfit(
+        titleTextStyle: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w600,
-          color: colorScheme.onBackground,
+          color: colorScheme.onSurface,
         ),
       ),
       cardTheme: CardThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         elevation: 0,
-        color: colorScheme.surfaceVariant,
+        color: colorScheme.surfaceContainerHighest,
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
         backgroundColor: colorScheme.surface,
         indicatorColor: colorScheme.primaryContainer,
         labelTextStyle: WidgetStateProperty.all(
-          GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500),
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -53,7 +52,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         filled: true,
-        fillColor: colorScheme.surfaceVariant,
+        fillColor: colorScheme.surfaceContainerHighest,
       ),
     );
   }
@@ -63,9 +62,8 @@ class AppTheme {
       seedColor: _seedColor,
       brightness: Brightness.dark,
     ).copyWith(
-      background: Colors.black,
       surface: const Color(0xFF0A0A0A),
-      surfaceVariant: const Color(0xFF121212),
+      surfaceContainerHighest: const Color(0xFF121212),
     );
 
     return ThemeData(
@@ -77,7 +75,7 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.outfit(
+        titleTextStyle: const TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w600,
           color: Colors.white,
@@ -93,7 +91,7 @@ class AppTheme {
         backgroundColor: Colors.black,
         indicatorColor: colorScheme.primaryContainer,
         labelTextStyle: WidgetStateProperty.all(
-          GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500),
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -116,23 +114,12 @@ class AppTheme {
     );
   }
 
+  /// Uses the platform bundled Roboto/sans-serif stack — no network font fetch.
   static TextTheme _textTheme(Color color) {
-    return TextTheme(
-      displayLarge: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold),
-      displayMedium: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold),
-      displaySmall: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold),
-      headlineLarge: GoogleFonts.outfit(color: color, fontWeight: FontWeight.w600),
-      headlineMedium: GoogleFonts.outfit(color: color, fontWeight: FontWeight.w600),
-      headlineSmall: GoogleFonts.outfit(color: color, fontWeight: FontWeight.w600),
-      titleLarge: GoogleFonts.outfit(color: color, fontWeight: FontWeight.w600),
-      titleMedium: GoogleFonts.inter(color: color, fontWeight: FontWeight.w600),
-      titleSmall: GoogleFonts.inter(color: color, fontWeight: FontWeight.w600),
-      bodyLarge: GoogleFonts.inter(color: color),
-      bodyMedium: GoogleFonts.inter(color: color),
-      bodySmall: GoogleFonts.inter(color: color),
-      labelLarge: GoogleFonts.inter(color: color, fontWeight: FontWeight.w500),
-      labelMedium: GoogleFonts.inter(color: color, fontWeight: FontWeight.w500),
-      labelSmall: GoogleFonts.inter(color: color, fontWeight: FontWeight.w500),
+    final base = Typography.material2021().black;
+    return base.apply(
+      bodyColor: color,
+      displayColor: color,
     );
   }
 }

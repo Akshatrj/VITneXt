@@ -54,9 +54,18 @@ class _HolidayManagerScreenState extends ConsumerState<HolidayManagerScreen> {
   bool _multiSelect = false;
   final Set<String> _selectedIds = {};
 
-  Future<void> _afterChange() async {
+  Future<void> _afterChange({DateTime? from, DateTime? to}) async {
     ref.invalidate(holidaysProvider);
-    invalidateTodaySchedule(ref);
+    if (from != null && to != null) {
+      var cursor = DateTime(from.year, from.month, from.day);
+      final end = DateTime(to.year, to.month, to.day);
+      while (!cursor.isAfter(end)) {
+        invalidateScheduleForDate(ref, cursor);
+        cursor = cursor.add(const Duration(days: 1));
+      }
+    } else {
+      invalidateTodaySchedule(ref);
+    }
     await refreshWidgetSchedule(ref);
   }
 
@@ -84,7 +93,8 @@ class _HolidayManagerScreenState extends ConsumerState<HolidayManagerScreen> {
     DateTime? day,
     bool forceRange = false,
   }) async {
-    final saved = await showModalBottomSheet<bool>(
+    final prior = existing;
+    final affected = await showModalBottomSheet<({DateTime from, DateTime to})?>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -97,7 +107,9 @@ class _HolidayManagerScreenState extends ConsumerState<HolidayManagerScreen> {
         forceRange: forceRange,
       ),
     );
-    if (saved == true) await _afterChange();
+    if (affected != null) {
+      await _afterChange(from: affected.from, to: affected.to);
+    }
   }
 
   Future<void> _importAcademicCalendar() async {
@@ -533,16 +545,32 @@ class _HolidayEditorSheetState extends ConsumerState<_HolidayEditorSheet> {
     });
   }
 
+  ({DateTime from, DateTime to}) _affectedRange(DateTime start, DateTime end) {
+    final existing = widget.existing;
+    if (existing == null) {
+      return (from: start, to: end);
+    }
+    var from = start;
+    var to = end;
+    if (existing.startDate.isBefore(from)) from = existing.startDate;
+    if (existing.endDate.isAfter(to)) to = existing.endDate;
+    return (from: from, to: to);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final semester = await ref.read(activeSemesterProvider.future);
+    final storage = ref.read(localStorageProvider);
+    await storage.init();
+    final semester = await storage.getActiveSemester();
     final end = _useRange ? _endDate : _startDate;
+    final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final endNorm = DateTime(end.year, end.month, end.day);
     final holiday = Holiday(
       id: widget.existing?.id ?? const Uuid().v4(),
       semesterId: widget.existing?.semesterId ?? semester?.id,
-      startDate: DateTime(_startDate.year, _startDate.month, _startDate.day),
-      endDate: DateTime(end.year, end.month, end.day),
+      startDate: start,
+      endDate: endNorm,
       label: _nameController.text.trim(),
       type: _type,
       notes: _notesController.text.trim(),
@@ -551,15 +579,22 @@ class _HolidayEditorSheetState extends ConsumerState<_HolidayEditorSheet> {
       createdAt: widget.existing?.createdAt,
     );
 
-    await ref.read(localStorageProvider).saveHoliday(holiday);
-    if (mounted) Navigator.pop(context, true);
+    await storage.saveHoliday(holiday);
+    if (mounted) Navigator.pop(context, _affectedRange(start, endNorm));
   }
 
   Future<void> _delete() async {
     final existing = widget.existing;
     if (existing == null) return;
-    await ref.read(localStorageProvider).deleteHoliday(existing.id);
-    if (mounted) Navigator.pop(context, true);
+    final storage = ref.read(localStorageProvider);
+    await storage.init();
+    await storage.deleteHoliday(existing.id);
+    if (mounted) {
+      Navigator.pop(
+        context,
+        (from: existing.startDate, to: existing.endDate),
+      );
+    }
   }
 
   @override

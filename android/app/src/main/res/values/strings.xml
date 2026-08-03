@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VITneXt</string>
-    <string name="widget_description">Shows today\'s current or next class. Countdowns stay in the app.</string>
+    <!-- Visible in widget/Shelf pickers; OnePlus Shelf hides apps with blank widget labels -->
+    <string name="widget_name" translatable="false">VITneXt</string>
+    <string name="widget_title" translatable="false">Next Class</string>
+    <string name="widget_description">Today\'s current or next class on your home screen or Shelf</string>
 </resources>

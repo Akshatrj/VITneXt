@@ -124,7 +124,7 @@ class DayScheduleList extends ConsumerWidget {
                         const Icon(Icons.location_on, color: Colors.white, size: 16),
                         const SizedBox(width: 4),
                         Text(
-                          cls.classroomFull,
+                          cls.classroom,
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
                         ),
                       ],

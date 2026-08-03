@@ -54,12 +54,12 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
     );
   }
 
-  void _showAddHolidaySheet() {
+  void _showAddHolidaySheet({Holiday? existing}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => const AddHolidaySheet(),
+      builder: (context) => AddHolidaySheet(existing: existing),
     );
   }
 
@@ -270,8 +270,13 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
               ),
               onDismissed: (_) async {
                 final storage = ref.read(localStorageProvider);
+                await storage.init();
                 await storage.deleteHoliday(holiday.id);
                 ref.invalidate(holidaysProvider);
+                invalidateScheduleForDate(ref, holiday.startDate);
+                if (!DateUtils.isSameDay(holiday.startDate, holiday.endDate)) {
+                  invalidateScheduleForDate(ref, holiday.endDate);
+                }
                 invalidateTodaySchedule(ref);
                 await refreshWidgetSchedule(ref);
               },
@@ -287,6 +292,8 @@ class _ManageScreenState extends ConsumerState<ManageScreen> with SingleTickerPr
                   subtitle: Text(
                     _holidaySubtitle(holiday),
                   ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showAddHolidaySheet(existing: holiday),
                 ),
               ),
             );

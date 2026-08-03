@@ -249,16 +249,16 @@ void main() {
     });
 
     test('classroom getter', () {
-      expect(rc.classroom, 'AB-1101');
-      
+      expect(rc.classroom, 'AB-1 101');
+
       final online = rc.copyWith(building: 'CR');
-      expect(online.classroom, 'Online');
-      
+      expect(online.classroom, 'CR');
+
       final other = rc.copyWith(building: 'Other', room: 'Auditorium');
       expect(other.classroom, 'Auditorium');
-      
+
       final ground = rc.copyWith(building: 'AB', floor: 'G', room: '102');
-      expect(ground.classroom, 'AB-0102');
+      expect(ground.classroom, 'AB-1 0102');
     });
   });
 
@@ -296,7 +296,7 @@ void main() {
     });
 
     test('classroom getter', () {
-      expect(course.classroom, 'CB-2201');
+      expect(course.classroom, 'CB 2201');
     });
   });
 }

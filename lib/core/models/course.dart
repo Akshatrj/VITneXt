@@ -1,4 +1,5 @@
 import 'package:vit_nextclass/core/constants/buildings.dart';
+import 'package:vit_nextclass/core/utils/location_formatter.dart';
 
 class Course {
   final String id;
@@ -25,13 +26,11 @@ class Course {
     this.color,
   });
 
-  String get classroom {
-    if (building == 'CR') return 'Online';
-    if (building == 'Other') return room;
-    String floorNum = floor == 'G' ? '0' : floor;
-    return '$building-$floorNum$room';
-  }
+  /// Abbreviated display location (e.g. `AB-1 105`).
+  String get classroom =>
+      LocationFormatter.formatFromParts(building: building, floor: floor, room: room);
 
+  /// Full descriptive location for editing and export.
   String get classroomFull {
     final buildingName = Buildings.getFullName(building);
     if (building == 'CR') return buildingName;

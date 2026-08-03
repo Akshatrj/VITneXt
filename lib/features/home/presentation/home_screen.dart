@@ -54,41 +54,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _markHolidayForDate(DateTime date) async {
     final day = normalizeScheduleDate(date);
     final isToday = day == normalizeScheduleDate(DateTime.now());
-    final nameController = TextEditingController(
-      text: isToday ? 'Holiday' : 'Holiday',
-    );
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isToday ? 'Mark Today as Holiday' : 'Mark Tomorrow as Holiday'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'Holiday name',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
 
-    final label = nameController.text.trim();
-    nameController.dispose();
-    if (confirmed != true || label.isEmpty) return;
-
-    final semester = await ref.read(activeSemesterProvider.future);
     final storage = ref.read(localStorageProvider);
-    // Avoid overlapping same-day holidays fighting each other.
+    await storage.init();
+    final semester = await storage.getActiveSemester();
     await storage.deleteHolidaysCoveringDate(day, semesterId: semester?.id);
 
     final holiday = Holiday(
@@ -96,7 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       semesterId: semester?.id,
       startDate: day,
       endDate: day,
-      label: label,
+      label: 'Holiday',
       type: HolidayType.university,
       source: 'Manual',
     );
@@ -109,13 +78,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Marked holiday: $label')),
+        SnackBar(
+          content: Text(
+            isToday ? 'Today marked as holiday' : 'Tomorrow marked as holiday',
+          ),
+        ),
       );
     }
   }
 
   Future<void> _removeHoliday(Holiday holiday) async {
-    await ref.read(localStorageProvider).deleteHoliday(holiday.id);
+    final storage = ref.read(localStorageProvider);
+    await storage.init();
+    await storage.deleteHoliday(holiday.id);
     ref.invalidate(holidaysProvider);
     invalidateScheduleForDate(ref, holiday.startDate);
     invalidateTodaySchedule(ref);

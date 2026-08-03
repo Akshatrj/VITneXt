@@ -22,32 +22,69 @@ class LocalStorage {
     AppLog.instance.info('db', 'LocalStorage initialized', data: {'path': _dir.path});
   }
 
-  File get _semestersFile => File('${_dir.path}/semesters.json');
-  File get _coursesFile => File('${_dir.path}/courses.json');
-  File get _overridesFile => File('${_dir.path}/overrides.json');
-  File get _holidaysFile => File('${_dir.path}/holidays.json');
+  static const _semestersFileName = 'semesters.json';
+  static const _coursesFileName = 'courses.json';
+  static const _overridesFileName = 'overrides.json';
+  static const _holidaysFileName = 'holidays.json';
 
-  Future<List<T>> _readList<T>(File file, T Function(Map<String, dynamic>) fromJson) async {
+  File _backupFile(File file) => File('${file.path}.bak');
+
+  Future<List<T>> _readList<T>(String filename, T Function(Map<String, dynamic>) fromJson) async {
     await init();
+    final file = File('${_dir.path}/$filename');
     if (!await file.exists()) return [];
-    try {
-      final content = await file.readAsString();
+
+    Future<List<T>> parseFile(File f) async {
+      final content = await f.readAsString();
       final List<dynamic> jsonList = jsonDecode(content);
       return jsonList.map((e) => fromJson(e as Map<String, dynamic>)).toList();
-    } catch (e) {
+    }
+
+    try {
+      return await parseFile(file);
+    } catch (e, st) {
+      AppLog.instance.error('db', 'read failed', data: {'path': file.path}, error: e, stackTrace: st);
+      final backup = _backupFile(file);
+      if (await backup.exists()) {
+        try {
+          AppLog.instance.warn('db', 'restoring from backup', data: {'path': backup.path});
+          return await parseFile(backup);
+        } catch (backupError, backupSt) {
+          AppLog.instance.error(
+            'db',
+            'backup read failed',
+            data: {'path': backup.path},
+            error: backupError,
+            stackTrace: backupSt,
+          );
+        }
+      }
       return [];
     }
   }
 
-  Future<void> _writeList<T>(File file, List<T> list, Map<String, dynamic> Function(T) toJson) async {
+  Future<void> _writeList<T>(
+    String filename,
+    List<T> list,
+    Map<String, dynamic> Function(T) toJson,
+  ) async {
     await init();
+    final file = File('${_dir.path}/$filename');
     final jsonList = list.map((e) => toJson(e)).toList();
-    await file.writeAsString(jsonEncode(jsonList));
+    final content = jsonEncode(jsonList);
+    if (await file.exists()) {
+      try {
+        await file.copy(_backupFile(file).path);
+      } catch (e, st) {
+        AppLog.instance.error('db', 'backup copy failed', data: {'path': file.path}, error: e, stackTrace: st);
+      }
+    }
+    await file.writeAsString(content);
   }
 
   // --- Semester Methods ---
   Future<List<Semester>> getSemesters() async {
-    return _readList(_semestersFile, Semester.fromJson);
+    return _readList(_semestersFileName, Semester.fromJson);
   }
 
   Future<Semester?> getActiveSemester() async {
@@ -66,13 +103,14 @@ class LocalStorage {
     } else {
       semesters.add(semester);
     }
-    await _writeList(_semestersFile, semesters, (s) => s.toJson());
+    await _writeList(_semestersFileName, semesters, (s) => s.toJson());
   }
 
   Future<void> deleteSemester(String id) async {
+    await resetSemester(id);
     final semesters = await getSemesters();
     semesters.removeWhere((s) => s.id == id);
-    await _writeList(_semestersFile, semesters, (s) => s.toJson());
+    await _writeList(_semestersFileName, semesters, (s) => s.toJson());
   }
 
   Future<void> setActiveSemester(String id) async {
@@ -84,12 +122,12 @@ class LocalStorage {
         semesters[i] = semesters[i].copyWith(isActive: false);
       }
     }
-    await _writeList(_semestersFile, semesters, (s) => s.toJson());
+    await _writeList(_semestersFileName, semesters, (s) => s.toJson());
   }
 
   // --- Course Methods ---
   Future<List<Course>> getCourses(String semesterId) async {
-    final courses = await _readList(_coursesFile, Course.fromJson);
+    final courses = await _readList(_coursesFileName, Course.fromJson);
     return courses.where((c) => c.semesterId == semesterId).toList();
   }
 
@@ -100,20 +138,20 @@ class LocalStorage {
   }
 
   Future<void> saveCourse(Course course) async {
-    final courses = await _readList(_coursesFile, Course.fromJson);
+    final courses = await _readList(_coursesFileName, Course.fromJson);
     final index = courses.indexWhere((c) => c.id == course.id);
     if (index >= 0) {
       courses[index] = course;
     } else {
       courses.add(course);
     }
-    await _writeList(_coursesFile, courses, (c) => c.toJson());
+    await _writeList(_coursesFileName, courses, (c) => c.toJson());
   }
 
   Future<void> deleteCourse(String id) async {
-    final courses = await _readList(_coursesFile, Course.fromJson);
+    final courses = await _readList(_coursesFileName, Course.fromJson);
     courses.removeWhere((c) => c.id == id);
-    await _writeList(_coursesFile, courses, (c) => c.toJson());
+    await _writeList(_coursesFileName, courses, (c) => c.toJson());
   }
 
   // --- Override Methods ---
@@ -127,7 +165,7 @@ class LocalStorage {
   }
 
   Future<List<ScheduleOverride>> getAllOverrides() async {
-    return _readList(_overridesFile, ScheduleOverride.fromJson);
+    return _readList(_overridesFileName, ScheduleOverride.fromJson);
   }
 
   Future<void> saveOverride(ScheduleOverride override_) async {
@@ -138,13 +176,13 @@ class LocalStorage {
     } else {
       overrides.add(override_);
     }
-    await _writeList(_overridesFile, overrides, (o) => o.toJson());
+    await _writeList(_overridesFileName, overrides, (o) => o.toJson());
   }
 
   Future<void> deleteOverride(String id) async {
     final overrides = await getAllOverrides();
     overrides.removeWhere((o) => o.id == id);
-    await _writeList(_overridesFile, overrides, (o) => o.toJson());
+    await _writeList(_overridesFileName, overrides, (o) => o.toJson());
   }
 
   // --- Holiday Methods ---
@@ -175,30 +213,32 @@ class LocalStorage {
     return matches.first;
   }
 
-  /// Removes holidays that cover [date] for the given semester (or active).
+  /// Removes semester-scoped holidays that cover [date] for the given semester (or active).
+  /// Global holidays (null/empty [Holiday.semesterId]) are never removed here.
   Future<int> deleteHolidaysCoveringDate(DateTime date, {String? semesterId}) async {
     final all = await getAllHolidays();
     if (semesterId == null) {
       final active = await getActiveSemester();
       semesterId = active?.id;
     }
+    if (semesterId == null) return 0;
+
     final before = all.length;
     all.removeWhere((h) {
-      final sameSemester =
-          h.semesterId == null || h.semesterId!.isEmpty || h.semesterId == semesterId;
-      if (!sameSemester) return false;
+      if (h.semesterId == null || h.semesterId!.isEmpty) return false;
+      if (h.semesterId != semesterId) return false;
       if (h.covers(date)) return true;
       return h.isRecurring &&
           h.startDate.month == date.month &&
           h.startDate.day == date.day;
     });
     if (all.length == before) return 0;
-    await _writeList(_holidaysFile, all, (h) => h.toJson());
+    await _writeList(_holidaysFileName, all, (h) => h.toJson());
     return before - all.length;
   }
 
   Future<List<Holiday>> getAllHolidays() async {
-    return _readList(_holidaysFile, Holiday.fromJson);
+    return _readList(_holidaysFileName, Holiday.fromJson);
   }
 
   Future<List<Holiday>> getHolidaysForSemester(String? semesterId) async {
@@ -232,7 +272,7 @@ class LocalStorage {
         holidays.add(holiday);
       }
     }
-    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+    await _writeList(_holidaysFileName, holidays, (h) => h.toJson());
   }
 
   Future<void> saveHolidays(List<Holiday> toSave, {bool replaceDuplicates = true}) async {
@@ -252,26 +292,26 @@ class LocalStorage {
         holidays.add(holiday);
       }
     }
-    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+    await _writeList(_holidaysFileName, holidays, (h) => h.toJson());
   }
 
   Future<void> deleteHoliday(String id) async {
     final holidays = await getAllHolidays();
     holidays.removeWhere((h) => h.id == id);
-    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+    await _writeList(_holidaysFileName, holidays, (h) => h.toJson());
   }
 
   Future<void> deleteHolidays(Iterable<String> ids) async {
     final idSet = ids.toSet();
     final holidays = await getAllHolidays();
     holidays.removeWhere((h) => idSet.contains(h.id));
-    await _writeList(_holidaysFile, holidays, (h) => h.toJson());
+    await _writeList(_holidaysFileName, holidays, (h) => h.toJson());
   }
 
   // --- Export/Import/Reset ---
   Future<Map<String, dynamic>> exportAll() async {
     final semesters = await getSemesters();
-    final courses = await _readList(_coursesFile, Course.fromJson);
+    final courses = await _readList(_coursesFileName, Course.fromJson);
     final overrides = await getAllOverrides();
     final holidays = await getAllHolidays();
 
@@ -289,21 +329,43 @@ class LocalStorage {
       'keys': data.keys.toList(),
     });
     try {
+      List<Semester>? semesters;
+      List<Course>? courses;
+      List<ScheduleOverride>? overrides;
+      List<Holiday>? holidays;
+
       if (data.containsKey('semesters')) {
-        final list = (data['semesters'] as List).map((e) => Semester.fromJson(e)).toList();
-        await _writeList(_semestersFile, list, (e) => e.toJson());
+        semesters = (data['semesters'] as List)
+            .map((e) => Semester.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
       if (data.containsKey('courses')) {
-        final list = (data['courses'] as List).map((e) => Course.fromJson(e)).toList();
-        await _writeList(_coursesFile, list, (e) => e.toJson());
+        courses = (data['courses'] as List)
+            .map((e) => Course.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
       if (data.containsKey('overrides')) {
-        final list = (data['overrides'] as List).map((e) => ScheduleOverride.fromJson(e)).toList();
-        await _writeList(_overridesFile, list, (e) => e.toJson());
+        overrides = (data['overrides'] as List)
+            .map((e) => ScheduleOverride.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
       if (data.containsKey('holidays')) {
-        final list = (data['holidays'] as List).map((e) => Holiday.fromJson(e)).toList();
-        await _writeList(_holidaysFile, list, (e) => e.toJson());
+        holidays = (data['holidays'] as List)
+            .map((e) => Holiday.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+
+      if (semesters != null) {
+        await _writeList(_semestersFileName, semesters, (e) => e.toJson());
+      }
+      if (courses != null) {
+        await _writeList(_coursesFileName, courses, (e) => e.toJson());
+      }
+      if (overrides != null) {
+        await _writeList(_overridesFileName, overrides, (e) => e.toJson());
+      }
+      if (holidays != null) {
+        await _writeList(_holidaysFileName, holidays, (e) => e.toJson());
       }
       AppLog.instance.info('import', 'importAll success');
     } catch (e, st) {
@@ -314,31 +376,36 @@ class LocalStorage {
 
   Future<void> resetAll() async {
     await init();
-    if (await _semestersFile.exists()) await _semestersFile.delete();
-    if (await _coursesFile.exists()) await _coursesFile.delete();
-    if (await _overridesFile.exists()) await _overridesFile.delete();
-    if (await _holidaysFile.exists()) await _holidaysFile.delete();
+    for (final name in [
+      _semestersFileName,
+      _coursesFileName,
+      _overridesFileName,
+      _holidaysFileName,
+    ]) {
+      final file = File('${_dir.path}/$name');
+      if (await file.exists()) await file.delete();
+    }
   }
 
   /// Deletes all courses, linked overrides, and semester-scoped holidays for [semesterId].
   Future<void> resetSemester(String semesterId) async {
     await init();
-    final courses = await _readList(_coursesFile, Course.fromJson);
+    final courses = await _readList(_coursesFileName, Course.fromJson);
     final semesterCourseIds =
         courses.where((c) => c.semesterId == semesterId).map((c) => c.id).toSet();
 
     final keptCourses = courses.where((c) => c.semesterId != semesterId).toList();
-    await _writeList(_coursesFile, keptCourses, (e) => e.toJson());
+    await _writeList(_coursesFileName, keptCourses, (e) => e.toJson());
 
     final overrides = await getAllOverrides();
     final keptOverrides = overrides
         .where((o) => o.linkedCourseId == null || !semesterCourseIds.contains(o.linkedCourseId))
         .toList();
-    await _writeList(_overridesFile, keptOverrides, (e) => e.toJson());
+    await _writeList(_overridesFileName, keptOverrides, (e) => e.toJson());
 
     final holidays = await getAllHolidays();
     await _writeList(
-      _holidaysFile,
+      _holidaysFileName,
       holidays.where((h) => h.semesterId != semesterId).toList(),
       (e) => e.toJson(),
     );

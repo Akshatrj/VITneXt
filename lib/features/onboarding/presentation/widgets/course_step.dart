@@ -20,9 +20,13 @@ class CourseStep extends ConsumerStatefulWidget {
   ConsumerState<CourseStep> createState() => _CourseStepState();
 }
 
-class _CourseStepState extends ConsumerState<CourseStep> {
+class _CourseStepState extends ConsumerState<CourseStep>
+    with AutomaticKeepAliveClientMixin {
   List<Course> _courses = [];
   bool _isLoading = true;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -57,6 +61,7 @@ class _CourseStepState extends ConsumerState<CourseStep> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -202,7 +207,7 @@ class _CourseStepState extends ConsumerState<CourseStep> {
               course.name,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text('${course.code} | ${course.ffcsSlot}\n${course.classroomFull}'),
+            subtitle: Text('${course.code} | ${course.ffcsSlot}\n${course.classroom}'),
             isThreeLine: true,
           ),
         );

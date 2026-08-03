@@ -10,6 +10,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
 import 'package:vit_nextclass/core/services/app_log.dart';
 import 'package:vit_nextclass/core/services/backup_export_service.dart';
+import 'package:vit_nextclass/core/services/class_focus_bridge.dart';
+import 'package:vit_nextclass/core/services/class_live_sync.dart';
 import 'package:vit_nextclass/core/services/notification_scheduler.dart';
 import 'package:vit_nextclass/core/services/timetable_share_service.dart';
 import 'package:vit_nextclass/features/holidays/presentation/holiday_manager_screen.dart';
@@ -47,6 +49,10 @@ class SettingsScreen extends ConsumerWidget {
 
           _buildSectionHeader(context, 'Notifications'),
           _buildNotificationsSection(context, ref),
+          const SizedBox(height: 16),
+
+          _buildSectionHeader(context, 'Class Focus'),
+          _buildClassFocusSection(context, ref),
           const SizedBox(height: 16),
 
           _buildSectionHeader(context, 'Home Screen Widget'),
@@ -155,6 +161,89 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildClassFocusSection(BuildContext context, WidgetRef ref) {
+    final liveStatus = ref.watch(liveClassStatusProvider);
+    final autoSilent = ref.watch(autoSilentDuringClassProvider);
+    final theme = Theme.of(context);
+
+    return Card(
+      elevation: 0,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: Icon(Icons.circle_notifications_outlined, color: theme.colorScheme.primary),
+            title: const Text('Live class status'),
+            subtitle: const Text(
+              'Shows your ongoing class in the status bar / notification area on supported devices',
+            ),
+            trailing: Switch(
+              value: liveStatus,
+              onChanged: (value) async {
+                if (value) {
+                  final status = await Permission.notification.request();
+                  if (!status.isGranted) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Notification permission is required for live class status'),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+                await ref.read(liveClassStatusProvider.notifier).setEnabled(value);
+                invalidateClassLiveMonitorSync();
+                await syncClassLiveMonitor(ref, force: true);
+              },
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.vibration, color: theme.colorScheme.primary),
+            title: const Text('Silent + vibrate during class'),
+            subtitle: const Text(
+              'Automatically switches to vibrate-only while a class is in progress, then restores your previous sound mode',
+            ),
+            trailing: Switch(
+              value: autoSilent,
+              onChanged: (value) async {
+                if (value) {
+                  final canModify = await ClassFocusBridge.canModifyRingerMode();
+                  if (!canModify && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Could not change sound mode. Open sound settings to allow the app.',
+                        ),
+                        action: SnackBarAction(
+                          label: 'Settings',
+                          onPressed: () => ClassFocusBridge.openSoundSettings(),
+                        ),
+                      ),
+                    );
+                  }
+                }
+                await ref.read(autoSilentDuringClassProvider.notifier).setEnabled(value);
+                invalidateClassLiveMonitorSync();
+                await syncClassLiveMonitor(ref, force: true);
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(
+              'Runs offline. Class times are stored natively; alarms wake the monitor at start/end. '
+              'The foreground service runs during class (and briefly before class for live status), not all day.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWidgetSection(BuildContext context) {
     return Card(
       elevation: 0,
@@ -179,10 +268,10 @@ class SettingsScreen extends ConsumerWidget {
             const Text(
               '1. Long-press your home screen\n'
               '2. Tap Widgets\n'
-              '3. Find VITneXt → add "Shows your current or next class"\n'
+              '3. Find VITneXt → add "Next Class"\n'
               '4. Tap widget to open app · Next cycles classes · Cancel/Restore toggles the next class\n\n'
-              'OnePlus Shelf: open Shelf → + → Widgets → pick VITneXt '
-              '(supported on modern OxygenOS Shelf that allows app widgets).',
+              'OnePlus Shelf: Shelf → + → Widgets → search "VITneXt" or open the VITneXt app row.\n'
+              'If VITneXt is missing, enable the system Shelf app (Settings → Apps → Shelf → Enable).',
               style: TextStyle(height: 1.5),
             ),
           ],

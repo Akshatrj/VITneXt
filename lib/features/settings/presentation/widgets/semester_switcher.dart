@@ -38,20 +38,25 @@ class SemesterSwitcher extends ConsumerWidget {
             if (semesters.isEmpty) {
               return const Text('No semesters found');
             }
+            final activeId = activeSemesterAsync.whenOrNull(
+              data: (active) => active?.id,
+            );
             return ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: semesters.length,
               itemBuilder: (context, index) {
                 final semester = semesters[index];
-                final isActive = activeSemesterAsync.value?.id == semester.id;
+                final isActive = activeId == semester.id;
 
                 return RadioListTile<String>(
                   title: Text(semester.name),
                   subtitle: Text(isActive ? 'Active Semester' : 'Tap to switch'),
                   value: semester.id,
-                  groupValue: activeSemesterAsync.value?.id,
-                  onChanged: (value) async {
+                  groupValue: activeId,
+                  onChanged: activeSemesterAsync.hasError
+                      ? null
+                      : (value) async {
                     if (value != null && !isActive) {
                       await ref.read(localStorageProvider).setActiveSemester(value);
                       AppLog.instance.info('semester', 'switched', data: {
@@ -158,6 +163,12 @@ class SemesterSwitcher extends ConsumerWidget {
     if (confirm == true) {
       await ref.read(localStorageProvider).deleteSemester(semester.id);
       ref.invalidate(allSemestersProvider);
+      ref.invalidate(activeSemesterProvider);
+      ref.invalidate(coursesProvider);
+      ref.invalidate(overridesProvider);
+      ref.invalidate(holidaysProvider);
+      invalidateTodaySchedule(ref);
+      await refreshWidgetSchedule(ref);
     }
   }
 }

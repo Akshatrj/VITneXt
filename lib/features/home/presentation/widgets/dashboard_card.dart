@@ -201,7 +201,7 @@ class DashboardCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: Text('📍 ${cls.classroomFull}', style: _locationStyle(theme)),
+                child: Text('📍 ${cls.classroom}', style: _locationStyle(theme)),
               ),
               Text('Ends in ${TimeUtils.formatDuration(minsLeft)}', style: _timerStyle(theme)),
             ],
@@ -241,7 +241,7 @@ class DashboardCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: Text('📍 ${cls.classroomFull}', style: _locationStyle(theme)),
+                child: Text('📍 ${cls.classroom}', style: _locationStyle(theme)),
               ),
               if (minsUntil != null)
                 Text(

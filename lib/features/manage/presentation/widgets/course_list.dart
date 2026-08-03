@@ -74,7 +74,7 @@ class CourseList extends ConsumerWidget {
                       children: [
                         const SizedBox(height: 4),
                         Text('Slot: ${course.ffcsSlot}'),
-                        Text('Room: ${course.classroomFull}'),
+                        Text('Room: ${course.classroom}'),
                         Text('Faculty: ${course.faculty}'),
                       ],
                     ),

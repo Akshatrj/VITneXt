@@ -8,8 +8,9 @@ import 'package:vit_nextclass/features/home/providers/home_provider.dart';
 import 'package:vit_nextclass/features/manage/providers/manage_provider.dart';
 
 class AddHolidaySheet extends ConsumerStatefulWidget {
-  const AddHolidaySheet({super.key, this.initialDate});
+  const AddHolidaySheet({super.key, this.existing, this.initialDate});
 
+  final Holiday? existing;
   final DateTime? initialDate;
 
   @override
@@ -20,17 +21,29 @@ class _AddHolidaySheetState extends ConsumerState<AddHolidaySheet> {
   final _formKey = GlobalKey<FormState>();
   late DateTime _startDate;
   late DateTime _endDate;
-  bool _useRange = false;
-  HolidayType _type = HolidayType.university;
+  late bool _useRange;
+  late HolidayType _type;
   final TextEditingController _labelController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    final day = widget.initialDate ?? DateTime.now();
-    _startDate = DateTime(day.year, day.month, day.day);
-    _endDate = _startDate;
+    final existing = widget.existing;
+    if (existing != null) {
+      _startDate = existing.startDate;
+      _endDate = existing.endDate;
+      _useRange = !DateUtils.isSameDay(existing.startDate, existing.endDate);
+      _type = existing.type;
+      _labelController.text = existing.label;
+      _notesController.text = existing.notes;
+    } else {
+      final day = widget.initialDate ?? DateTime.now();
+      _startDate = DateTime(day.year, day.month, day.day);
+      _endDate = _startDate;
+      _useRange = false;
+      _type = HolidayType.university;
+    }
   }
 
   @override
@@ -45,40 +58,88 @@ class _AddHolidaySheetState extends ConsumerState<AddHolidaySheet> {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+      firstDate: DateTime.now().subtract(const Duration(days: 365 * 2)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
     );
     if (date != null) {
       setState(() {
+        final normalized = DateTime(date.year, date.month, date.day);
         if (isStart) {
-          _startDate = date;
+          _startDate = normalized;
           if (_endDate.isBefore(_startDate)) _endDate = _startDate;
         } else {
-          _endDate = date.isBefore(_startDate) ? _startDate : date;
+          _endDate = normalized.isBefore(_startDate) ? _startDate : normalized;
         }
       });
+    }
+  }
+
+  void _invalidateHolidayDates(DateTime start, DateTime end) {
+    var cursor = DateTime(start.year, start.month, start.day);
+    final last = DateTime(end.year, end.month, end.day);
+    while (!cursor.isAfter(last)) {
+      invalidateScheduleForDate(ref, cursor);
+      cursor = cursor.add(const Duration(days: 1));
     }
   }
 
   Future<void> _saveHoliday() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final semester = await ref.read(activeSemesterProvider.future);
+    final storage = ref.read(localStorageProvider);
+    await storage.init();
+    final semester = await storage.getActiveSemester();
     final end = _useRange ? _endDate : _startDate;
-    final newHoliday = Holiday(
-      id: const Uuid().v4(),
-      semesterId: semester?.id,
-      startDate: _startDate,
-      endDate: end,
+    final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final endNorm = DateTime(end.year, end.month, end.day);
+
+    final existing = widget.existing;
+    if (existing == null) {
+      // Replace any semester-scoped holidays on the same day(s) so quick-mark
+      // entries can be updated from Manage instead of creating duplicates.
+      var cursor = start;
+      while (!cursor.isAfter(endNorm)) {
+        await storage.deleteHolidaysCoveringDate(cursor, semesterId: semester?.id);
+        cursor = cursor.add(const Duration(days: 1));
+      }
+    }
+
+    final holiday = Holiday(
+      id: existing?.id ?? const Uuid().v4(),
+      semesterId: existing?.semesterId ?? semester?.id,
+      startDate: start,
+      endDate: endNorm,
       label: _labelController.text.trim(),
       type: _type,
       notes: _notesController.text.trim(),
-      source: 'Manual',
+      source: existing?.source ?? 'Manual',
+      createdAt: existing?.createdAt,
     );
 
-    final storage = ref.read(localStorageProvider);
-    await storage.saveHoliday(newHoliday);
+    await storage.saveHoliday(holiday);
     ref.invalidate(holidaysProvider);
+
+    if (existing != null) {
+      _invalidateHolidayDates(existing.startDate, existing.endDate);
+    }
+    _invalidateHolidayDates(start, endNorm);
+    invalidateTodaySchedule(ref);
+    await refreshWidgetSchedule(ref);
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _deleteHoliday() async {
+    final existing = widget.existing;
+    if (existing == null) return;
+
+    final storage = ref.read(localStorageProvider);
+    await storage.init();
+    await storage.deleteHoliday(existing.id);
+    ref.invalidate(holidaysProvider);
+    _invalidateHolidayDates(existing.startDate, existing.endDate);
     invalidateTodaySchedule(ref);
     await refreshWidgetSchedule(ref);
 
@@ -89,6 +150,8 @@ class _AddHolidaySheetState extends ConsumerState<AddHolidaySheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isEdit = widget.existing != null;
+
     return Padding(
       padding: EdgeInsets.only(
         left: 16, right: 16, top: 24,
@@ -102,7 +165,7 @@ class _AddHolidaySheetState extends ConsumerState<AddHolidaySheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Add Holiday',
+                isEdit ? 'Edit Holiday' : 'Add Holiday',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 24),
@@ -184,11 +247,21 @@ class _AddHolidaySheetState extends ConsumerState<AddHolidaySheet> {
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 56),
                       ),
-                      child: const Text('Save Holiday'),
+                      child: Text(isEdit ? 'Update Holiday' : 'Save Holiday'),
                     ),
                   ),
                 ],
               ),
+              if (isEdit) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _deleteHoliday,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  child: const Text('Delete holiday'),
+                ),
+              ],
             ],
           ),
         ),

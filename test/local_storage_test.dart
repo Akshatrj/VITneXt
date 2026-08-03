@@ -5,6 +5,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/models/course.dart';
+import 'package:vit_nextclass/core/models/holiday.dart';
 import 'package:vit_nextclass/core/models/schedule_override.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 
@@ -120,6 +121,74 @@ void main() {
       expect(s2Courses.length, 1);
       expect(overrides.any((o) => o.id == 'o1'), false);
       expect(overrides.any((o) => o.id == 'o2'), true);
+    });
+
+    test('deleteHolidaysCoveringDate keeps global holidays', () async {
+      final day = DateTime(2026, 8, 15);
+      await storage.saveSemester(Semester(id: 's1', name: 'Sem', isActive: true));
+      await storage.saveHoliday(Holiday(
+        id: 'global',
+        startDate: day,
+        endDate: day,
+        label: 'Independence Day',
+        type: HolidayType.university,
+        source: 'Imported',
+      ));
+      await storage.saveHoliday(Holiday(
+        id: 'scoped',
+        semesterId: 's1',
+        startDate: day,
+        endDate: day,
+        label: 'Old personal holiday',
+        type: HolidayType.personal,
+        source: 'Manual',
+      ));
+
+      final removed = await storage.deleteHolidaysCoveringDate(day, semesterId: 's1');
+      final remaining = await storage.getAllHolidays();
+
+      expect(removed, 1);
+      expect(remaining.any((h) => h.id == 'global'), isTrue);
+      expect(remaining.any((h) => h.id == 'scoped'), isFalse);
+    });
+
+    test('importAll does not write semesters when courses payload is invalid', () async {
+      await storage.saveSemester(Semester(id: 'keep', name: 'Keep Sem', isActive: true));
+
+      await expectLater(
+        storage.importAll({
+          'semesters': [
+            {'id': 'new', 'name': 'New Sem', 'isActive': true},
+          ],
+          'courses': 'not-a-list',
+        }),
+        throwsA(isA<TypeError>()),
+      );
+
+      final semesters = await storage.getSemesters();
+      expect(semesters.length, 1);
+      expect(semesters.first.id, 'keep');
+    });
+
+    test('deleteSemester removes linked courses and overrides', () async {
+      await storage.saveSemester(Semester(id: 's1', name: 'Sem 1', isActive: true));
+      await storage.saveSemester(Semester(id: 's2', name: 'Sem 2', isActive: false));
+      await storage.saveCourse(Course(
+        id: 'c1',
+        semesterId: 's2',
+        code: 'DEL',
+        name: 'Delete Me',
+        faculty: '',
+        ffcsSlot: 'A14',
+        building: 'AB',
+        floor: '1',
+        room: '101',
+      ));
+
+      await storage.deleteSemester('s2');
+
+      expect(await storage.getSemesters(), hasLength(1));
+      expect(await storage.getCourses('s2'), isEmpty);
     });
 
     test('resetAll clears all data files', () async {

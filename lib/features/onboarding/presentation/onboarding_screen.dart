@@ -88,48 +88,56 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentPage = index;
-                  });
-                },
-                children: [
-                  WelcomeStep(onNext: _nextPage),
-                  SemesterStep(onNext: _nextPage, onBack: _previousPage),
-                  CourseStep(onComplete: _completeOnboarding, onBack: _previousPage),
-                ],
+    return PopScope(
+      canPop: _currentPage == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _currentPage > 0) {
+          _previousPage();
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  physics: const ClampingScrollPhysics(),
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPage = index;
+                    });
+                  },
+                  children: [
+                    WelcomeStep(onNext: _nextPage),
+                    SemesterStep(onNext: _nextPage, onBack: _previousPage),
+                    CourseStep(onComplete: _completeOnboarding, onBack: _previousPage),
+                  ],
+                ),
               ),
-            ),
-            if (_currentPage < 2)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 24.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    3,
-                    (index) => Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4.0),
-                      width: _currentPage == index ? 24.0 : 8.0,
-                      height: 8.0,
-                      decoration: BoxDecoration(
-                        color: _currentPage == index
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4.0),
+              if (_currentPage < 2)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      3,
+                      (index) => Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                        width: _currentPage == index ? 24.0 : 8.0,
+                        height: 8.0,
+                        decoration: BoxDecoration(
+                          color: _currentPage == index
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(4.0),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

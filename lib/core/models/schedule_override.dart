@@ -1,3 +1,5 @@
+import 'package:vit_nextclass/core/utils/location_formatter.dart';
+
 enum OverrideType { cancelled, extra, modified }
 
 class ScheduleOverride {
@@ -37,10 +39,19 @@ class ScheduleOverride {
 
   String? get overrideClassroom {
     if (overrideBuilding == null || overrideFloor == null || overrideRoom == null) return null;
-    if (overrideBuilding == 'CR') return 'Online';
+    return LocationFormatter.formatFromParts(
+      building: overrideBuilding!,
+      floor: overrideFloor!,
+      room: overrideRoom!,
+    );
+  }
+
+  /// Full descriptive override room for editing views.
+  String? get overrideClassroomFull {
+    if (overrideBuilding == null || overrideFloor == null || overrideRoom == null) return null;
+    if (overrideBuilding == 'CR') return 'Online Class';
     if (overrideBuilding == 'Other') return overrideRoom;
-    String floorNum = overrideFloor == 'G' ? '0' : overrideFloor!;
-    return '$overrideBuilding-$floorNum$overrideRoom';
+    return '${overrideBuilding}, Floor ${overrideFloor}, Room ${overrideRoom}';
   }
 
   factory ScheduleOverride.fromJson(Map<String, dynamic> json) {

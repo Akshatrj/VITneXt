@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/providers/app_providers.dart';
+import 'package:vit_nextclass/features/onboarding/providers/onboarding_provider.dart';
 
 class SemesterStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
@@ -18,28 +19,53 @@ class SemesterStep extends ConsumerStatefulWidget {
   ConsumerState<SemesterStep> createState() => _SemesterStepState();
 }
 
-class _SemesterStepState extends ConsumerState<SemesterStep> {
+class _SemesterStepState extends ConsumerState<SemesterStep>
+    with AutomaticKeepAliveClientMixin {
   final _controller = TextEditingController();
   bool _isLoading = false;
   bool _isValid = false;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
-    _controller.addListener(_validate);
+    _controller.addListener(_onTextChanged);
+    _restoreFromState();
   }
 
-  void _validate() {
-    final isValid = _controller.text.trim().isNotEmpty;
+  void _restoreFromState() {
+    final onboarding = ref.read(onboardingProvider);
+    if (onboarding.semesterName.isNotEmpty) {
+      _controller.text = onboarding.semesterName;
+      _isValid = true;
+      return;
+    }
+
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final storage = ref.read(localStorageProvider);
+      final active = await storage.getActiveSemester();
+      if (!mounted || active == null) return;
+      ref.read(onboardingProvider.notifier).setSemesterId(active.id);
+      ref.read(onboardingProvider.notifier).setSemesterName(active.name);
+      _controller.text = active.name;
+      setState(() => _isValid = active.name.trim().isNotEmpty);
+    });
+  }
+
+  void _onTextChanged() {
+    final name = _controller.text;
+    ref.read(onboardingProvider.notifier).setSemesterName(name);
+    final isValid = name.trim().isNotEmpty;
     if (isValid != _isValid) {
-      setState(() {
-        _isValid = isValid;
-      });
+      setState(() => _isValid = isValid);
     }
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -47,27 +73,38 @@ class _SemesterStepState extends ConsumerState<SemesterStep> {
   Future<void> _saveSemester() async {
     if (!_isValid) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
       final name = _controller.text.trim();
-      final semester = Semester(
-        id: const Uuid().v4(),
-        name: name,
-        isActive: true,
-      );
-
       final localStorage = ref.read(localStorageProvider);
-      
-      // If there's an existing active semester, we might need to deactivate it, 
-      // but LocalStorage might handle it or we can just save it. 
-      // The prompt asks to create and save it as active.
-      // Usually saving a new one as active is fine.
+      final onboarding = ref.read(onboardingProvider);
+      final existingId = onboarding.semesterId;
+
+      Semester semester;
+      if (existingId != null) {
+        final semesters = await localStorage.getSemesters();
+        Semester? existing;
+        for (final s in semesters) {
+          if (s.id == existingId) {
+            existing = s;
+            break;
+          }
+        }
+        semester = (existing ?? Semester(id: existingId, name: name, isActive: true))
+            .copyWith(name: name, isActive: true);
+      } else {
+        semester = Semester(
+          id: const Uuid().v4(),
+          name: name,
+          isActive: true,
+        );
+        ref.read(onboardingProvider.notifier).setSemesterId(semester.id);
+      }
+
+      ref.read(onboardingProvider.notifier).setSemesterName(name);
       await localStorage.saveSemester(semester);
-      
-      // We might need to refresh the provider
+      await localStorage.setActiveSemester(semester.id);
       ref.invalidate(activeSemesterProvider);
 
       widget.onNext();
@@ -79,15 +116,14 @@ class _SemesterStepState extends ConsumerState<SemesterStep> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 

@@ -7,6 +7,7 @@ import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/services/app_log.dart';
 import 'package:vit_nextclass/core/services/crash_reporter.dart';
+import 'package:vit_nextclass/core/services/class_live_sync.dart';
 import 'package:vit_nextclass/core/services/notification_scheduler.dart';
 import 'package:vit_nextclass/core/services/reliability_bridge.dart';
 import 'package:vit_nextclass/core/services/schedule_resolver.dart';
@@ -45,6 +46,13 @@ Future<void> _postLaunchMaintenance() async {
     AppLog.instance.info('notifications', 'startup reschedule done');
   } catch (e, st) {
     AppLog.instance.error('notifications', 'startup reschedule failed', error: e, stackTrace: st);
+  }
+
+  try {
+    await syncClassLiveMonitorOnStartup().timeout(const Duration(seconds: 12));
+    AppLog.instance.info('class_focus', 'startup sync done');
+  } catch (e, st) {
+    AppLog.instance.error('class_focus', 'startup sync failed', error: e, stackTrace: st);
   }
 
   try {
@@ -108,6 +116,7 @@ void main() {
   runZonedGuarded(() async {
     await AppLog.instance.init();
     await CrashReporter.instance.init();
+    await LocalStorage().init();
     AppLog.instance.info('lifecycle', 'main() start');
 
     runApp(const ProviderScope(child: VITNextClassApp()));

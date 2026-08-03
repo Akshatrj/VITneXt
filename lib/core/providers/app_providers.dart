@@ -14,7 +14,9 @@ final scheduleResolverProvider = Provider<ScheduleResolver>((ref) {
 });
 
 final activeSemesterProvider = FutureProvider<Semester?>((ref) async {
-  return ref.read(localStorageProvider).getActiveSemester();
+  final storage = ref.read(localStorageProvider);
+  await storage.init();
+  return storage.getActiveSemester();
 });
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
@@ -64,6 +66,50 @@ class NotificationMinutesNotifier extends StateNotifier<int> {
 
 final notificationMinutesProvider = StateNotifierProvider<NotificationMinutesNotifier, int>((ref) {
   return NotificationMinutesNotifier();
+});
+
+class LiveClassStatusNotifier extends StateNotifier<bool> {
+  LiveClassStatusNotifier() : super(false) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('live_class_status_enabled') ?? false;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('live_class_status_enabled', enabled);
+  }
+}
+
+final liveClassStatusProvider =
+    StateNotifierProvider<LiveClassStatusNotifier, bool>((ref) {
+  return LiveClassStatusNotifier();
+});
+
+class AutoSilentDuringClassNotifier extends StateNotifier<bool> {
+  AutoSilentDuringClassNotifier() : super(false) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('auto_silent_during_class') ?? false;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    state = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_silent_during_class', enabled);
+  }
+}
+
+final autoSilentDuringClassProvider =
+    StateNotifierProvider<AutoSilentDuringClassNotifier, bool>((ref) {
+  return AutoSilentDuringClassNotifier();
 });
 
 final onboardingCompleteProvider = FutureProvider<bool>((ref) async {

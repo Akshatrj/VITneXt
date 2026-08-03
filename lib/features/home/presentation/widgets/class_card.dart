@@ -180,7 +180,6 @@ class ClassCard extends StatelessWidget {
         bgColor = AppColors.ab02Purple;
         break;
       case ClassStatus.upcoming:
-      default:
         return const SizedBox.shrink();
     }
 
