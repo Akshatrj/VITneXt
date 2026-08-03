@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -39,6 +40,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         const val KEY_CANCELLED_KEYS = "flutter.widget_cancelled_keys"
         const val KEY_PENDING_CANCEL_TOGGLE = "flutter.pending_widget_cancel_toggle"
         const val KEY_PENDING_CANCEL_KEY = "flutter.pending_widget_cancel_key"
+        const val KEY_PENDING_SCHEDULE_SYNC = "flutter.pending_schedule_sync"
         const val KEY_DAY_COMPLETE = "flutter.widget_day_complete"
         const val KEY_NO_CLASSES = "flutter.widget_no_classes"
 
@@ -156,22 +158,64 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             return
         }
 
-        val key = "$scheduleDate|$courseId"
-        val cancelled = readCancelledKeys(prefs).toMutableSet()
-        if (cancelled.contains(key)) {
-            cancelled.remove(key)
-        } else {
-            cancelled.add(key)
-        }
+        ScheduleOverrideStorage.toggleCancellation(context, scheduleDate, courseId)
+        val cancelled = ScheduleOverrideStorage.cancelledKeysForDate(context, scheduleDate)
 
         prefs.edit()
             .putString(KEY_CANCELLED_KEYS, JSONArray(cancelled.toList()).toString())
-            .putString(KEY_PENDING_CANCEL_TOGGLE, "true")
-            .putString(KEY_PENDING_CANCEL_KEY, key)
+            .putString(KEY_PENDING_SCHEDULE_SYNC, "true")
+            .remove(KEY_PENDING_CANCEL_TOGGLE)
+            .remove(KEY_PENDING_CANCEL_KEY)
             .apply()
 
         writeLegacyKeysFromQueueItem(prefs, item)
+        syncClassLiveMonitorFromQueue(context, scheduleDate, cancelled)
         refreshAllWidgets(context)
+    }
+
+    /** Rebuild native silent-mode schedule from widget queue + override cancellations. */
+    private fun syncClassLiveMonitorFromQueue(
+        context: Context,
+        scheduleDate: String,
+        cancelled: Set<String>,
+    ) {
+        val monitorPrefs = context.getSharedPreferences(
+            ClassLiveMonitorService.PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+        if (!FlutterPrefs.getBool(monitorPrefs, ClassLiveMonitorService.KEY_AUTO_SILENT, false)) {
+            return
+        }
+
+        val widgetPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val queue = readQueue(widgetPrefs)
+        val scheduleArray = JSONArray()
+        for (item in queue) {
+            if (item.optString("scheduleDate", "") != scheduleDate) continue
+            val courseId = item.optString("linkedCourseId", "")
+            val isCancelled =
+                cancelled.contains("$scheduleDate|$courseId") ||
+                    item.optString("status", "") == "cancelled"
+            val entry = JSONObject()
+            entry.put("startHour", item.optInt("startHour", 0))
+            entry.put("startMinute", item.optInt("startMinute", 0))
+            entry.put("endHour", item.optInt("endHour", 0))
+            entry.put("endMinute", item.optInt("endMinute", 0))
+            entry.put("cancelled", isCancelled)
+            scheduleArray.put(entry)
+        }
+
+        monitorPrefs.edit()
+            .putString(
+                ClassLiveMonitorService.KEY_SCHEDULE_JSON,
+                scheduleArray.toString()
+            )
+            .apply()
+
+        val syncIntent = Intent(context, ClassLiveMonitorService::class.java).apply {
+            action = ClassLiveMonitorService.ACTION_SYNC
+        }
+        ContextCompat.startForegroundService(context, syncIntent)
     }
 
     private fun refreshAllWidgets(context: Context) {

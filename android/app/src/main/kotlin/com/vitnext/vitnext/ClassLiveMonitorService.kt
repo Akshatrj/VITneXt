@@ -14,7 +14,7 @@ import org.json.JSONArray
 import java.util.Calendar
 
 /**
- * Foreground service for live class status and optional vibrate-only mode.
+ * Foreground service for silent + vibrate during class.
  * Uses [ClassLiveScheduler] alarms at class boundaries instead of polling.
  */
 class ClassLiveMonitorService : Service() {
@@ -24,57 +24,12 @@ class ClassLiveMonitorService : Service() {
         const val ACTION_STOP = "com.vitnext.CLASS_LIVE_STOP"
         const val ACTION_BOUNDARY = "com.vitnext.CLASS_LIVE_BOUNDARY"
 
-        const val EXTRA_DISPLAY_JSON = "display_json"
-
         const val PREFS_NAME = "FlutterSharedPreferences"
-        const val KEY_LIVE_ENABLED = "flutter.live_class_status_enabled"
         const val KEY_AUTO_SILENT = "flutter.auto_silent_during_class"
         const val KEY_SCHEDULE_JSON = "flutter.live_schedule_json"
 
-        const val PRE_CLASS_WINDOW_MINUTES = 15
-
-        private const val CHANNEL_ID = "live_class_status"
+        private const val CHANNEL_ID = "class_focus"
         private const val NOTIFICATION_ID = 10042
-
-        private var displayCache: Map<String, DisplayEntry> = emptyMap()
-
-        fun updateDisplayCache(json: String) {
-            displayCache = parseDisplayJson(json)
-        }
-
-        fun clearDisplayCache() {
-            displayCache = emptyMap()
-        }
-
-        private fun parseDisplayJson(json: String): Map<String, DisplayEntry> {
-            val map = mutableMapOf<String, DisplayEntry>()
-            try {
-                val array = JSONArray(json)
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val startHour = obj.optInt("startHour", 0)
-                    val startMinute = obj.optInt("startMinute", 0)
-                    val endHour = obj.optInt("endHour", 0)
-                    val endMinute = obj.optInt("endMinute", 0)
-                    val key = slotKey(startHour, startMinute, endHour, endMinute)
-                    map[key] = DisplayEntry(
-                        code = obj.optString("code", ""),
-                        name = obj.optString("name", ""),
-                        room = obj.optString("room", "")
-                    )
-                }
-            } catch (_: Exception) {
-                // Empty cache on parse error.
-            }
-            return map
-        }
-
-        private fun slotKey(
-            startHour: Int,
-            startMinute: Int,
-            endHour: Int,
-            endMinute: Int
-        ): String = "$startHour:$startMinute-$endHour:$endMinute"
     }
 
     private var isForeground = false
@@ -90,30 +45,13 @@ class ClassLiveMonitorService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 ClassLiveScheduler.cancelAll(this)
-                clearDisplayCache()
                 RingerModeHelper.restore(this)
                 endForegroundAndStop()
                 return START_NOT_STICKY
             }
-            ACTION_SYNC -> {
-                val displayJson = intent.getStringExtra(EXTRA_DISPLAY_JSON)
-                if (displayJson != null) {
-                    updateDisplayCache(displayJson)
-                }
-            }
             ACTION_BOUNDARY -> {
                 // Re-evaluate at alarm boundary.
             }
-        }
-
-        if (!isForeground) {
-            startOrUpdateForeground(
-                buildStatusNotification(
-                    title = "VITneXt",
-                    body = "Monitoring your class schedule",
-                    ongoing = true
-                )
-            )
         }
 
         evaluateAndUpdate()
@@ -129,10 +67,10 @@ class ClassLiveMonitorService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Live Class Status",
+                "Class Focus",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows your current class on supported devices"
+                description = "Silent + vibrate during class"
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -141,149 +79,38 @@ class ClassLiveMonitorService : Service() {
 
     private fun readPrefs(): SharedPrefsSnapshot {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val liveEnabled = FlutterPrefs.getBool(prefs, KEY_LIVE_ENABLED, false)
         val autoSilent = FlutterPrefs.getBool(prefs, KEY_AUTO_SILENT, false)
         val scheduleJson = prefs.getString(KEY_SCHEDULE_JSON, "[]") ?: "[]"
-        return SharedPrefsSnapshot(liveEnabled, autoSilent, scheduleJson)
+        return SharedPrefsSnapshot(autoSilent, scheduleJson)
     }
 
     private fun evaluateAndUpdate() {
         val snapshot = readPrefs()
 
-        if (!snapshot.liveEnabled && !snapshot.autoSilent) {
+        if (!snapshot.autoSilent) {
             ClassLiveScheduler.cancelAll(this)
-            clearDisplayCache()
             RingerModeHelper.restore(this)
             endForegroundAndStop()
             return
         }
 
         val classes = parseSchedule(snapshot.scheduleJson)
-        ClassLiveScheduler.schedule(
-            this,
-            classes,
-            snapshot.liveEnabled,
-            PRE_CLASS_WINDOW_MINUTES
-        )
+        ClassLiveScheduler.schedule(this, classes)
 
         val active = findCurrentClass(classes)
-        val next = findNextClass(classes)
-        val inPreClassWindow = isInPreClassWindow(next)
-
-        if (snapshot.autoSilent) {
-            if (active != null && !active.cancelled) {
-                RingerModeHelper.applyVibrateMode(this)
-            } else {
-                RingerModeHelper.restore(this)
-            }
+        if (active != null && !active.cancelled) {
+            RingerModeHelper.applyVibrateMode(this)
+            startOrUpdateForeground(
+                buildStatusNotification(
+                    title = "Silent during class",
+                    body = "Vibrate-only mode is active",
+                    ongoing = true
+                )
+            )
         } else {
             RingerModeHelper.restore(this)
-        }
-
-        val needsForeground = shouldRunForeground(
-            snapshot.liveEnabled,
-            snapshot.autoSilent,
-            active,
-            next,
-            inPreClassWindow
-        )
-
-        if (!needsForeground) {
             endForegroundAndStop()
-            return
         }
-
-        val notification = buildNotificationForState(
-            snapshot.liveEnabled,
-            snapshot.autoSilent,
-            active,
-            next,
-            inPreClassWindow
-        )
-        startOrUpdateForeground(notification)
-    }
-
-    private fun shouldRunForeground(
-        liveEnabled: Boolean,
-        autoSilent: Boolean,
-        active: LiveClassEntry?,
-        next: LiveClassEntry?,
-        inPreClassWindow: Boolean
-    ): Boolean {
-        val inClass = active != null && !active.cancelled
-        if (inClass) return true
-        if (liveEnabled && inPreClassWindow && next != null && !next.cancelled) return true
-        if (autoSilent && !liveEnabled) return false
-        return false
-    }
-
-    private fun buildNotificationForState(
-        liveEnabled: Boolean,
-        autoSilent: Boolean,
-        active: LiveClassEntry?,
-        next: LiveClassEntry?,
-        inPreClassWindow: Boolean
-    ): Notification {
-        if (!liveEnabled) {
-            return buildStatusNotification(
-                title = "Class focus active",
-                body = "Silent + vibrate during class",
-                ongoing = true,
-                showWhen = false
-            )
-        }
-
-        return when {
-            active != null && !active.cancelled -> {
-                val display = displayFor(active)
-                buildStatusNotification(
-                    title = if (display.code.isNotEmpty()) "In class · ${display.code}" else "In class",
-                    body = buildClassBody(display, active, isActive = true),
-                    ongoing = true,
-                    showWhen = true
-                )
-            }
-            inPreClassWindow && next != null && !next.cancelled -> {
-                val display = displayFor(next)
-                buildStatusNotification(
-                    title = if (display.code.isNotEmpty()) "Next · ${display.code}" else "Upcoming class",
-                    body = buildClassBody(display, next, isActive = false),
-                    ongoing = true,
-                    showWhen = true
-                )
-            }
-            else -> buildStatusNotification(
-                title = "Class focus active",
-                body = if (autoSilent) "Monitoring schedule · silent during class" else "Monitoring schedule",
-                ongoing = true,
-                showWhen = false
-            )
-        }
-    }
-
-    private fun buildClassBody(
-        display: DisplayEntry,
-        cls: LiveClassEntry,
-        isActive: Boolean
-    ): String {
-        val parts = mutableListOf<String>()
-        if (display.name.isNotEmpty()) parts.add(display.name)
-        if (display.room.isNotEmpty()) parts.add(display.room)
-        val timePart = if (isActive) "until ${formatEnd(cls)}" else "at ${formatStart(cls)}"
-        parts.add(timePart)
-        return if (parts.isNotEmpty()) parts.joinToString(" · ") else timePart
-    }
-
-    private fun displayFor(cls: LiveClassEntry): DisplayEntry {
-        val key = slotKey(cls.startHour, cls.startMinute, cls.endHour, cls.endMinute)
-        return displayCache[key] ?: DisplayEntry()
-    }
-
-    private fun isInPreClassWindow(next: LiveClassEntry?): Boolean {
-        if (next == null || next.cancelled) return false
-        val now = nowMinutes()
-        val minutesUntilStart = next.startTotalMinutes - now
-        return minutesUntilStart in 1..PRE_CLASS_WINDOW_MINUTES
     }
 
     private fun startOrUpdateForeground(notification: Notification) {
@@ -307,7 +134,6 @@ class ClassLiveMonitorService : Service() {
         title: String,
         body: String,
         ongoing: Boolean,
-        showWhen: Boolean = false
     ): Notification {
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -325,8 +151,8 @@ class ClassLiveMonitorService : Service() {
             .setOngoing(ongoing)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .setShowWhen(showWhen)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pending)
             .build()
@@ -368,31 +194,7 @@ class ClassLiveMonitorService : Service() {
         }
     }
 
-    private fun findNextClass(classes: List<LiveClassEntry>): LiveClassEntry? {
-        val now = nowMinutes()
-        return classes
-            .filter { !it.cancelled && it.startTotalMinutes > now }
-            .minByOrNull { it.startTotalMinutes }
-    }
-
-    private fun formatStart(cls: LiveClassEntry): String =
-        formatTime(cls.startHour, cls.startMinute)
-
-    private fun formatEnd(cls: LiveClassEntry): String =
-        formatTime(cls.endHour, cls.endMinute)
-
-    private fun formatTime(hour: Int, minute: Int): String {
-        val period = if (hour >= 12) "PM" else "AM"
-        val h = when {
-            hour > 12 -> hour - 12
-            hour == 0 -> 12
-            else -> hour
-        }
-        return "$h:${minute.toString().padStart(2, '0')} $period"
-    }
-
     data class SharedPrefsSnapshot(
-        val liveEnabled: Boolean,
         val autoSilent: Boolean,
         val scheduleJson: String
     )
@@ -407,10 +209,4 @@ class ClassLiveMonitorService : Service() {
         val startTotalMinutes: Int = startHour * 60 + startMinute
         val endTotalMinutes: Int = endHour * 60 + endMinute
     }
-
-    data class DisplayEntry(
-        val code: String = "",
-        val name: String = "",
-        val room: String = ""
-    )
 }

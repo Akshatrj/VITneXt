@@ -6,6 +6,7 @@ import 'package:vit_nextclass/core/models/holiday.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 import 'package:vit_nextclass/core/services/app_log.dart';
 import 'package:vit_nextclass/core/services/widget_health_monitor.dart';
+import 'package:vit_nextclass/core/utils/prefs_utils.dart';
 
 /// One class entry for the Android home-screen widget (today only).
 class WidgetQueueEntry {
@@ -224,9 +225,8 @@ class WidgetBridge {
     );
     await prefs.setInt('widget_queue_index', queueIndex);
 
-    final pendingToggle = prefs.getBool('pending_widget_cancel_toggle') == true ||
-        prefs.getString('pending_widget_cancel_toggle') == 'true';
-    if (!pendingToggle) {
+    final pendingScheduleSync = readPrefBool(prefs, 'pending_schedule_sync');
+    if (!pendingScheduleSync) {
       await prefs.setString('widget_cancelled_keys', jsonEncode(cancelledKeys));
     }
 

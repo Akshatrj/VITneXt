@@ -39,11 +39,6 @@ class _ClassFocusHandlerState extends ConsumerState<ClassFocusHandler> {
       }
     });
 
-    ref.listen(liveClassStatusProvider, (_, __) {
-      invalidateClassLiveMonitorSync();
-      syncClassLiveMonitor(ref, force: true);
-    });
-
     ref.listen(autoSilentDuringClassProvider, (_, __) {
       invalidateClassLiveMonitorSync();
       syncClassLiveMonitor(ref, force: true);

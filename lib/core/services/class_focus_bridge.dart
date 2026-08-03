@@ -3,29 +3,25 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:vit_nextclass/core/models/resolved_class.dart';
 
-/// Bridges live class status + silent mode to the native Android monitor service.
+/// Bridges silent-during-class mode to the native Android monitor service.
 class ClassFocusBridge {
   static const _channel = MethodChannel('com.vitnext/class_focus');
 
   static Future<void> syncMonitor({
-    required bool liveStatusEnabled,
     required bool autoSilentEnabled,
     required List<ResolvedClass> todaySchedule,
   }) async {
-    if (!liveStatusEnabled && !autoSilentEnabled) {
+    if (!autoSilentEnabled) {
       await stopMonitor();
       return;
     }
 
     final scheduleJson = jsonEncode(todaySchedule.map(_slotToJson).toList());
-    final displayJson = jsonEncode(todaySchedule.map(_displayToJson).toList());
 
     try {
       await _channel.invokeMethod('syncClassMonitor', {
-        'liveEnabled': liveStatusEnabled,
         'autoSilent': autoSilentEnabled,
         'scheduleJson': scheduleJson,
-        'displayJson': displayJson,
       });
     } catch (_) {
       // Native channel unavailable (non-Android).
@@ -60,18 +56,6 @@ class ClassFocusBridge {
       'endHour': cls.endHour,
       'endMinute': cls.endMinute,
       'cancelled': cls.status == ClassStatus.cancelled,
-    };
-  }
-
-  static Map<String, dynamic> _displayToJson(ResolvedClass cls) {
-    return {
-      'startHour': cls.startHour,
-      'startMinute': cls.startMinute,
-      'endHour': cls.endHour,
-      'endMinute': cls.endMinute,
-      'code': cls.courseCode,
-      'name': cls.courseName,
-      'room': cls.classroom,
     };
   }
 }

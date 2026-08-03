@@ -162,7 +162,6 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Widget _buildClassFocusSection(BuildContext context, WidgetRef ref) {
-    final liveStatus = ref.watch(liveClassStatusProvider);
     final autoSilent = ref.watch(autoSilentDuringClassProvider);
     final theme = Theme.of(context);
 
@@ -171,35 +170,6 @@ class SettingsScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ListTile(
-            leading: Icon(Icons.circle_notifications_outlined, color: theme.colorScheme.primary),
-            title: const Text('Live class status'),
-            subtitle: const Text(
-              'Shows your ongoing class in the status bar / notification area on supported devices',
-            ),
-            trailing: Switch(
-              value: liveStatus,
-              onChanged: (value) async {
-                if (value) {
-                  final status = await Permission.notification.request();
-                  if (!status.isGranted) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Notification permission is required for live class status'),
-                        ),
-                      );
-                    }
-                    return;
-                  }
-                }
-                await ref.read(liveClassStatusProvider.notifier).setEnabled(value);
-                invalidateClassLiveMonitorSync();
-                await syncClassLiveMonitor(ref, force: true);
-              },
-            ),
-          ),
-          const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.vibration, color: theme.colorScheme.primary),
             title: const Text('Silent + vibrate during class'),
@@ -234,8 +204,8 @@ class SettingsScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Text(
-              'Runs offline. Class times are stored natively; alarms wake the monitor at start/end. '
-              'The foreground service runs during class (and briefly before class for live status), not all day.',
+              'Runs offline. Class times are stored natively; alarms wake the monitor at class start and end. '
+              'The foreground service runs only while a class is in progress, not all day.',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
             ),
           ),

@@ -11,14 +11,11 @@ object ClassLiveScheduler {
 
     private const val ALARM_REQUEST_START_BASE = 10000
     private const val ALARM_REQUEST_END_BASE = 20000
-    private const val ALARM_REQUEST_PRECLASS_BASE = 30000
     private const val MAX_SLOTS = 32
 
     fun schedule(
         context: Context,
         classes: List<ClassLiveMonitorService.LiveClassEntry>,
-        liveEnabled: Boolean,
-        preClassWindowMinutes: Int
     ) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         cancelAll(context, alarmManager)
@@ -41,16 +38,6 @@ object ClassLiveScheduler {
                     ALARM_REQUEST_END_BASE + index
                 )
             }
-            if (liveEnabled) {
-                val preClassMinute = cls.startTotalMinutes - preClassWindowMinutes
-                if (preClassMinute > now) {
-                    scheduleAtMinute(
-                        context, alarmManager,
-                        preClassMinute,
-                        ALARM_REQUEST_PRECLASS_BASE + index
-                    )
-                }
-            }
         }
     }
 
@@ -66,7 +53,6 @@ object ClassLiveScheduler {
         for (i in 0 until MAX_SLOTS) {
             codes.add(ALARM_REQUEST_START_BASE + i)
             codes.add(ALARM_REQUEST_END_BASE + i)
-            codes.add(ALARM_REQUEST_PRECLASS_BASE + i)
         }
         return codes
     }

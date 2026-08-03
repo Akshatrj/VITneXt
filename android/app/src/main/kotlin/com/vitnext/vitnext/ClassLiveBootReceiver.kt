@@ -18,9 +18,8 @@ class ClassLiveBootReceiver : BroadcastReceiver() {
             ClassLiveMonitorService.PREFS_NAME,
             Context.MODE_PRIVATE
         )
-        val liveEnabled = FlutterPrefs.getBool(prefs, ClassLiveMonitorService.KEY_LIVE_ENABLED, false)
         val autoSilent = FlutterPrefs.getBool(prefs, ClassLiveMonitorService.KEY_AUTO_SILENT, false)
-        if (!liveEnabled && !autoSilent) return
+        if (!autoSilent) return
 
         val serviceIntent = Intent(context, ClassLiveMonitorService::class.java).apply {
             action = ClassLiveMonitorService.ACTION_SYNC

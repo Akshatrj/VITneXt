@@ -6,6 +6,7 @@ import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/services/notification_service.dart';
 import 'package:vit_nextclass/core/services/schedule_resolver.dart';
+import 'package:vit_nextclass/core/utils/prefs_utils.dart';
 
 final localStorageProvider = Provider<LocalStorage>((ref) => LocalStorage());
 
@@ -68,28 +69,6 @@ final notificationMinutesProvider = StateNotifierProvider<NotificationMinutesNot
   return NotificationMinutesNotifier();
 });
 
-class LiveClassStatusNotifier extends StateNotifier<bool> {
-  LiveClassStatusNotifier() : super(false) {
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('live_class_status_enabled') ?? false;
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    state = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('live_class_status_enabled', enabled);
-  }
-}
-
-final liveClassStatusProvider =
-    StateNotifierProvider<LiveClassStatusNotifier, bool>((ref) {
-  return LiveClassStatusNotifier();
-});
-
 class AutoSilentDuringClassNotifier extends StateNotifier<bool> {
   AutoSilentDuringClassNotifier() : super(false) {
     _load();
@@ -97,7 +76,7 @@ class AutoSilentDuringClassNotifier extends StateNotifier<bool> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getBool('auto_silent_during_class') ?? false;
+    state = readPrefBool(prefs, 'auto_silent_during_class');
   }
 
   Future<void> setEnabled(bool enabled) async {

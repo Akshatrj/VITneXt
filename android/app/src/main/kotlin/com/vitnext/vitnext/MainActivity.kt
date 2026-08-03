@@ -65,10 +65,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "syncClassMonitor" -> {
-                        val liveEnabled = call.argument<Boolean>("liveEnabled") ?: false
                         val autoSilent = call.argument<Boolean>("autoSilent") ?: false
                         val scheduleJson = call.argument<String>("scheduleJson") ?: "[]"
-                        val displayJson = call.argument<String>("displayJson") ?: "[]"
 
                         val prefs = getSharedPreferences(
                             ClassLiveMonitorService.PREFS_NAME,
@@ -76,20 +74,15 @@ class MainActivity : FlutterActivity() {
                         )
                         prefs.edit()
                             .putString(
-                                ClassLiveMonitorService.KEY_LIVE_ENABLED,
-                                if (liveEnabled) "true" else "false"
-                            )
-                            .putString(
                                 ClassLiveMonitorService.KEY_AUTO_SILENT,
                                 if (autoSilent) "true" else "false"
                             )
                             .putString(ClassLiveMonitorService.KEY_SCHEDULE_JSON, scheduleJson)
                             .apply()
 
-                        if (liveEnabled || autoSilent) {
+                        if (autoSilent) {
                             val intent = Intent(this, ClassLiveMonitorService::class.java).apply {
                                 action = ClassLiveMonitorService.ACTION_SYNC
-                                putExtra(ClassLiveMonitorService.EXTRA_DISPLAY_JSON, displayJson)
                             }
                             ContextCompat.startForegroundService(this, intent)
                         } else {
