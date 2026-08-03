@@ -158,8 +158,13 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             return
         }
 
-        ScheduleOverrideStorage.toggleCancellation(context, scheduleDate, courseId)
+        val toggled = ScheduleOverrideStorage.toggleCancellation(context, scheduleDate, courseId)
         val cancelled = ScheduleOverrideStorage.cancelledKeysForDate(context, scheduleDate)
+        if (toggled == null || cancelled == null) {
+            // Do not clobber widget/prefs state when overrides.json is unreadable.
+            refreshAllWidgets(context)
+            return
+        }
 
         prefs.edit()
             .putString(KEY_CANCELLED_KEYS, JSONArray(cancelled.toList()).toString())

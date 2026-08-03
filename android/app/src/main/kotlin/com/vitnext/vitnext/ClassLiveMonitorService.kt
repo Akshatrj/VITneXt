@@ -44,6 +44,8 @@ class ClassLiveMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                // Satisfy startForegroundService contract before tearing down.
+                ensureForegroundPlaceholder()
                 ClassLiveScheduler.cancelAll(this)
                 RingerModeHelper.restore(this)
                 endForegroundAndStop()
@@ -54,8 +56,22 @@ class ClassLiveMonitorService : Service() {
             }
         }
 
+        // Callers use startForegroundService; Android requires startForeground promptly
+        // even when we immediately stop (e.g. sync/alarm between classes).
+        ensureForegroundPlaceholder()
         evaluateAndUpdate()
         return START_STICKY
+    }
+
+    private fun ensureForegroundPlaceholder() {
+        if (isForeground) return
+        startOrUpdateForeground(
+            buildStatusNotification(
+                title = "Class Focus",
+                body = "Updating class silent mode…",
+                ongoing = false
+            )
+        )
     }
 
     override fun onDestroy() {
