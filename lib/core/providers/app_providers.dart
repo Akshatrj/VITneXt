@@ -82,7 +82,8 @@ class AutoSilentDuringClassNotifier extends StateNotifier<bool> {
   Future<void> setEnabled(bool enabled) async {
     state = enabled;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('auto_silent_during_class', enabled);
+    // Native Class Focus reads string "true"/"false" from FlutterSharedPreferences.
+    await prefs.setString('auto_silent_during_class', enabled ? 'true' : 'false');
   }
 }
 

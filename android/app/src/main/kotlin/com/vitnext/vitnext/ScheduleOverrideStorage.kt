@@ -14,8 +14,9 @@ object ScheduleOverrideStorage {
     private const val OVERRIDES_FILE = "overrides.json"
     private const val OVERRIDES_BACKUP = "overrides.json.bak"
 
+    /** Matches Flutter path_provider `getApplicationDocumentsPath()` (`getDir("flutter")`). */
     private fun dataDir(context: Context): File =
-        File(context.applicationInfo.dataDir, "app_flutter")
+        context.getDir("flutter", Context.MODE_PRIVATE)
 
     private fun overridesFile(context: Context): File =
         File(dataDir(context), OVERRIDES_FILE)

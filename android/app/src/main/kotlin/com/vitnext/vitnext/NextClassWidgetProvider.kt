@@ -48,34 +48,50 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         const val ACTION_SHOW_NEXT = "com.vitnext.SHOW_NEXT_CLASS"
         const val ACTION_BOUNDARY = "com.vitnext.WIDGET_BOUNDARY"
 
+        const val EXTRA_COURSE_ID = "linked_course_id"
+        const val EXTRA_SCHEDULE_DATE = "schedule_date"
+
         private const val BOUNDARY_REQUEST = 42011
 
         private val OPEN_FLAGS =
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP
+
+        /** Explicit intent targeting the non-exported action receiver. */
+        fun actionIntent(
+            context: Context,
+            action: String,
+            item: JSONObject? = null,
+        ): Intent =
+            Intent(context, NextClassWidgetActionReceiver::class.java).apply {
+                this.action = action
+                if (item != null) {
+                    putExtra(EXTRA_COURSE_ID, item.optString("linkedCourseId", ""))
+                    putExtra(EXTRA_SCHEDULE_DATE, item.optString("scheduleDate", ""))
+                }
+            }
+
+        /** Shared dispatch for [NextClassWidgetActionReceiver] (and legacy provider path). */
+        fun handleWidgetAction(context: Context, intent: Intent?) {
+            val provider = NextClassWidgetProvider()
+            when (intent?.action) {
+                ACTION_SHOW_NEXT -> provider.handleShowNext(context)
+                ACTION_CANCEL_NEXT -> provider.handleCancelToggle(context, intent)
+                ACTION_BOUNDARY -> {
+                    provider.refreshAllWidgets(context)
+                    provider.scheduleBoundaryAlarm(context)
+                }
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        // Legacy PendingIntents may still target this provider until widgets refresh.
         when (intent.action) {
-            ACTION_SHOW_NEXT -> {
+            ACTION_SHOW_NEXT, ACTION_CANCEL_NEXT, ACTION_BOUNDARY -> {
                 try {
-                    handleShowNext(context)
-                } catch (_: Exception) {
-                }
-                return
-            }
-            ACTION_CANCEL_NEXT -> {
-                try {
-                    handleCancelToggle(context)
-                } catch (_: Exception) {
-                }
-                return
-            }
-            ACTION_BOUNDARY -> {
-                try {
-                    refreshAllWidgets(context)
-                    scheduleBoundaryAlarm(context)
+                    handleWidgetAction(context, intent)
                 } catch (_: Exception) {
                 }
                 return
@@ -136,7 +152,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         refreshAllWidgets(context)
     }
 
-    private fun handleCancelToggle(context: Context) {
+    private fun handleCancelToggle(context: Context, intent: Intent? = null) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (isStaticDayState(prefs)) {
             refreshAllWidgets(context)
@@ -144,13 +160,31 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         }
 
         val queue = readQueue(prefs)
-        val index = readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
-        if (queue.isEmpty() || index !in queue.indices) {
+        if (queue.isEmpty()) {
             refreshAllWidgets(context)
             return
         }
 
-        val item = queue[index]
+        val courseIdExtra = intent?.getStringExtra(EXTRA_COURSE_ID)?.trim().orEmpty()
+        val dateExtra = intent?.getStringExtra(EXTRA_SCHEDULE_DATE)?.trim().orEmpty()
+
+        val item = when {
+            courseIdExtra.isNotBlank() && dateExtra.isNotBlank() ->
+                queue.firstOrNull { entry ->
+                    entry.optString("linkedCourseId", "") == courseIdExtra &&
+                        entry.optString("scheduleDate", "") == dateExtra
+                }
+            else -> {
+                val index = readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+                if (index in queue.indices) queue[index] else null
+            }
+        }
+
+        if (item == null) {
+            refreshAllWidgets(context)
+            return
+        }
+
         val courseId = item.optString("linkedCourseId", "")
         val scheduleDate = item.optString("scheduleDate", "")
         if (courseId.isBlank() || scheduleDate.isBlank()) {
@@ -166,6 +200,11 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             return
         }
 
+        val itemIndex = queue.indexOf(item).takeIf { it >= 0 }
+            ?: readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+        val nextIndex = findNextNonCancelledIndex(queue, cancelled, itemIndex + 1)
+            ?: findNextNonCancelledIndex(queue, cancelled, 0)
+
         prefs.edit()
             .putString(KEY_CANCELLED_KEYS, JSONArray(cancelled.toList()).toString())
             .putString(KEY_PENDING_SCHEDULE_SYNC, "true")
@@ -173,7 +212,10 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             .remove(KEY_PENDING_CANCEL_KEY)
             .apply()
 
-        writeLegacyKeysFromQueueItem(prefs, item)
+        if (nextIndex != null) {
+            prefs.edit().putInt(KEY_QUEUE_INDEX, nextIndex).apply()
+        }
+
         syncClassLiveMonitorFromQueue(context, scheduleDate, cancelled)
         refreshAllWidgets(context)
     }
@@ -351,9 +393,18 @@ class NextClassWidgetProvider : AppWidgetProvider() {
 
                 val item = liveCurrent ?: liveNext ?: queue[index]
                 val isCancelled = isItemCancelled(item, cancelled)
+                val browsableCount = queue.count {
+                    !isItemCancelled(it, cancelled) &&
+                        it.optString("status", "") != "completed"
+                }
                 bindClassFromJson(views, item, isCancelled)
-                // No multi-day Next browsing — Cancel/Restore only for today's focused class.
-                bindActionButtons(context, views, item, isCancelled, hasMultiple = false)
+                bindActionButtons(
+                    context,
+                    views,
+                    item,
+                    isCancelled,
+                    hasMultiple = browsableCount > 1,
+                )
                 writeLegacyKeysFromQueueItem(prefs, item)
             }
             else -> {
@@ -558,11 +609,8 @@ class NextClassWidgetProvider : AppWidgetProvider() {
 
         if (hasMultiple) {
             views.setViewVisibility(R.id.widget_next_btn, View.VISIBLE)
-            val nextIntent = Intent(context, NextClassWidgetProvider::class.java).apply {
-                action = ACTION_SHOW_NEXT
-            }
             val nextPending = PendingIntent.getBroadcast(
-                context, 2, nextIntent,
+                context, 2, actionIntent(context, ACTION_SHOW_NEXT),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_next_btn, nextPending)
@@ -573,11 +621,11 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         if (canCancel) {
             views.setViewVisibility(R.id.widget_cancel_btn, View.VISIBLE)
             views.setTextViewText(R.id.widget_cancel_btn, if (isCancelled) "Restore" else "Cancel")
-            val cancelIntent = Intent(context, NextClassWidgetProvider::class.java).apply {
-                action = ACTION_CANCEL_NEXT
-            }
+            val requestCode = (courseId.hashCode() and 0x7fff) + 10
             val cancelPending = PendingIntent.getBroadcast(
-                context, 1, cancelIntent,
+                context,
+                requestCode,
+                actionIntent(context, ACTION_CANCEL_NEXT, item),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_cancel_btn, cancelPending)
@@ -595,6 +643,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         context: Context,
         views: RemoteViews,
         linkedCourseId: String?,
+        scheduleDate: String?,
         isCancelled: Boolean
     ) {
         views.setViewVisibility(R.id.widget_next_btn, View.GONE)
@@ -602,11 +651,14 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_actions_row, View.VISIBLE)
             views.setViewVisibility(R.id.widget_cancel_btn, View.VISIBLE)
             views.setTextViewText(R.id.widget_cancel_btn, if (isCancelled) "Restore" else "Cancel")
-            val cancelIntent = Intent(context, NextClassWidgetProvider::class.java).apply {
-                action = ACTION_CANCEL_NEXT
-            }
+            val requestCode = (linkedCourseId.hashCode() and 0x7fff) + 10
+            val cancelItem = JSONObject()
+                .put("linkedCourseId", linkedCourseId)
+                .put("scheduleDate", scheduleDate ?: "")
             val cancelPending = PendingIntent.getBroadcast(
-                context, 1, cancelIntent,
+                context,
+                requestCode,
+                actionIntent(context, ACTION_CANCEL_NEXT, cancelItem),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_cancel_btn, cancelPending)
@@ -686,7 +738,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         val pi = PendingIntent.getBroadcast(
             context,
             BOUNDARY_REQUEST,
-            Intent(context, NextClassWidgetProvider::class.java).apply { action = ACTION_BOUNDARY },
+            actionIntent(context, ACTION_BOUNDARY),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
