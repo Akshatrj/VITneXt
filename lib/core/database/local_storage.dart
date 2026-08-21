@@ -89,7 +89,17 @@ class LocalStorage {
         AppLog.instance.error('db', 'backup copy failed', data: {'path': file.path}, error: e, stackTrace: st);
       }
     }
-    await file.writeAsString(content);
+    final tempFile = File('${file.path}.tmp');
+    await tempFile.writeAsString(content);
+    try {
+      await tempFile.rename(file.path);
+    } catch (e, st) {
+      await file.writeAsString(content);
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      AppLog.instance.error('db', 'atomic rename failed', data: {'path': file.path}, error: e, stackTrace: st);
+    }
   }
 
   // --- Semester Methods ---
@@ -204,10 +214,12 @@ class LocalStorage {
         matches.add(h);
         continue;
       }
-      if (h.isRecurring &&
-          h.startDate.month == date.month &&
-          h.startDate.day == date.day) {
-        matches.add(h);
+      if (h.isRecurring) {
+        final start = DateTime(date.year, h.startDate.month, h.startDate.day);
+        final end = DateTime(date.year, h.endDate.month, h.endDate.day);
+        if (!date.isBefore(start) && !date.isAfter(end)) {
+          matches.add(h);
+        }
       }
     }
     if (matches.isEmpty) return null;
@@ -238,9 +250,12 @@ class LocalStorage {
       if (h.semesterId == null || h.semesterId!.isEmpty) return false;
       if (h.semesterId != semesterId) return false;
       if (h.covers(date)) return true;
-      return h.isRecurring &&
-          h.startDate.month == date.month &&
-          h.startDate.day == date.day;
+      if (h.isRecurring) {
+        final start = DateTime(date.year, h.startDate.month, h.startDate.day);
+        final end = DateTime(date.year, h.endDate.month, h.endDate.day);
+        return !date.isBefore(start) && !date.isAfter(end);
+      }
+      return false;
     });
     if (all.length == before) return 0;
     await _writeList(_holidaysFileName, all, (h) => h.toJson());
@@ -338,12 +353,13 @@ class LocalStorage {
     AppLog.instance.info('import', 'importAll begin', data: {
       'keys': data.keys.toList(),
     });
-    try {
-      List<Semester>? semesters;
-      List<Course>? courses;
-      List<ScheduleOverride>? overrides;
-      List<Holiday>? holidays;
 
+    List<Semester>? semesters;
+    List<Course>? courses;
+    List<ScheduleOverride>? overrides;
+    List<Holiday>? holidays;
+
+    try {
       if (data.containsKey('semesters')) {
         semesters = (data['semesters'] as List)
             .map((e) => Semester.fromJson(e as Map<String, dynamic>))
@@ -364,6 +380,24 @@ class LocalStorage {
             .map((e) => Holiday.fromJson(e as Map<String, dynamic>))
             .toList();
       }
+    } catch (e, st) {
+      AppLog.instance.error('import', 'importAll parse failed', error: e, stackTrace: st);
+      rethrow;
+    }
+
+    final backups = <String, File>{};
+    Future<void> backupIfExists(String filename) async {
+      final file = File('${_dir.path}/$filename');
+      if (await file.exists()) {
+        backups[filename] = file;
+      }
+    }
+
+    try {
+      if (semesters != null) await backupIfExists(_semestersFileName);
+      if (courses != null) await backupIfExists(_coursesFileName);
+      if (overrides != null) await backupIfExists(_overridesFileName);
+      if (holidays != null) await backupIfExists(_holidaysFileName);
 
       if (semesters != null) {
         await _writeList(_semestersFileName, semesters, (e) => e.toJson());
@@ -379,7 +413,15 @@ class LocalStorage {
       }
       AppLog.instance.info('import', 'importAll success');
     } catch (e, st) {
-      AppLog.instance.error('import', 'importAll failed', error: e, stackTrace: st);
+      AppLog.instance.error('import', 'importAll failed, restoring backups', error: e, stackTrace: st);
+      for (final entry in backups.entries) {
+        final backup = _backupFile(entry.value);
+        if (await backup.exists()) {
+          try {
+            await backup.copy(entry.value.path);
+          } catch (_) {}
+        }
+      }
       rethrow;
     }
   }

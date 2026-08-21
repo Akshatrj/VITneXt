@@ -60,7 +60,7 @@ class NotificationMinutesNotifier extends StateNotifier<int> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('notification_minutes', minutes);
     if (minutes <= 0) {
-      await NotificationService.instance.cancelAll();
+      await NotificationService.instance.cancelClassReminders();
     }
   }
 }

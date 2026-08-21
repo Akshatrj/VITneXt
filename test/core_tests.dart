@@ -181,6 +181,50 @@ void main() {
       expect(schedule[2].status, ClassStatus.upcoming);
       expect(schedule[3].status, ClassStatus.upcoming);
     });
+
+    test('Hiding holiday with extra override shows only the extra class', () async {
+      final now = DateTime(2026, 7, 27, 10, 0);
+      mockStorage.activeSemester = Semester(id: 's1', name: 'Fall 2026', isActive: true);
+      mockStorage.courses = [
+        Course(
+          id: 'c1',
+          semesterId: 's1',
+          code: 'CSE1001',
+          name: 'Intro',
+          faculty: 'Prof',
+          ffcsSlot: 'A1+TA1',
+          building: 'AB',
+          floor: '1',
+          room: '101',
+        ),
+      ];
+      mockStorage.holiday = Holiday(
+        id: 'h1',
+        startDate: now,
+        endDate: now,
+        label: 'Holiday',
+        type: HolidayType.university,
+      );
+      mockStorage.overrides = [
+        ScheduleOverride(
+          id: 'o-extra',
+          type: OverrideType.extra,
+          extraCourseCode: 'LAB',
+          extraCourseName: 'Make-up lab',
+          date: now,
+          overrideStartHour: 14,
+          overrideStartMinute: 0,
+          overrideEndHour: 15,
+          overrideEndMinute: 0,
+        ),
+      ];
+
+      final schedule = await resolver.resolveSchedule(now, now: now);
+
+      expect(schedule.length, 1);
+      expect(schedule.first.courseCode, 'LAB');
+      expect(schedule.first.status, ClassStatus.upcoming);
+    });
   });
 
   group('ConflictDetector', () {

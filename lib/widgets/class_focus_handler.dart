@@ -15,24 +15,22 @@ class ClassFocusHandler extends ConsumerStatefulWidget {
 }
 
 class _ClassFocusHandlerState extends ConsumerState<ClassFocusHandler> {
-  late final DateTime _todayKey;
-  bool _listenersAttached = false;
-
   @override
   void initState() {
     super.initState();
-    _todayKey = normalizeScheduleDate(DateTime.now());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       syncClassLiveMonitor(ref, force: true);
-      _attachListeners();
     });
   }
 
-  void _attachListeners() {
-    if (_listenersAttached) return;
-    _listenersAttached = true;
+  @override
+  Widget build(BuildContext context) {
+    final today = ref.watch(currentTimeProvider).maybeWhen(
+          data: (now) => normalizeScheduleDate(now),
+          orElse: () => normalizeScheduleDate(DateTime.now()),
+        );
 
-    ref.listen(dayScheduleProvider(_todayKey), (prev, next) {
+    ref.listen(dayScheduleProvider(today), (prev, next) {
       if (next.hasValue) {
         invalidateClassLiveMonitorSync();
         syncClassLiveMonitor(ref);
@@ -43,8 +41,7 @@ class _ClassFocusHandlerState extends ConsumerState<ClassFocusHandler> {
       invalidateClassLiveMonitorSync();
       syncClassLiveMonitor(ref, force: true);
     });
-  }
 
-  @override
-  Widget build(BuildContext context) => widget.child;
+    return widget.child;
+  }
 }

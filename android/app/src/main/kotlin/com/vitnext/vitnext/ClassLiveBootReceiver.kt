@@ -19,6 +19,7 @@ class ClassLiveBootReceiver : BroadcastReceiver() {
             Context.MODE_PRIVATE
         )
         val autoSilent = FlutterPrefs.getBool(prefs, ClassLiveMonitorService.KEY_AUTO_SILENT, false)
+        RingerModeHelper.restoreIfNeeded(context)
         if (!autoSilent) return
 
         DayRolloverScheduler.schedule(context)

@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import java.util.Calendar
 
 /** Schedules exact alarms at class boundaries instead of polling. */
@@ -11,7 +12,7 @@ object ClassLiveScheduler {
 
     private const val ALARM_REQUEST_START_BASE = 10000
     private const val ALARM_REQUEST_END_BASE = 20000
-    private const val MAX_SLOTS = 32
+    private const val MAX_SLOTS = 64
 
     fun schedule(
         context: Context,
@@ -67,6 +68,16 @@ object ClassLiveScheduler {
         if (triggerAt <= System.currentTimeMillis()) return
 
         val pending = buildPendingIntent(context, requestCode)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            !alarmManager.canScheduleExactAlarms()
+        ) {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAt,
+                pending
+            )
+            return
+        }
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             triggerAt,

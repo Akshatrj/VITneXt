@@ -181,18 +181,21 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) async {
                 if (value) {
                   final canModify = await ClassFocusBridge.canModifyRingerMode();
-                  if (!canModify && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Could not change sound mode. Open sound settings to allow the app.',
+                  if (!canModify) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            'Could not change sound mode. Open sound settings to allow the app.',
+                          ),
+                          action: SnackBarAction(
+                            label: 'Settings',
+                            onPressed: () => ClassFocusBridge.openSoundSettings(),
+                          ),
                         ),
-                        action: SnackBarAction(
-                          label: 'Settings',
-                          onPressed: () => ClassFocusBridge.openSoundSettings(),
-                        ),
-                      ),
-                    );
+                      );
+                    }
+                    return;
                   }
                 }
                 await ref.read(autoSilentDuringClassProvider.notifier).setEnabled(value);

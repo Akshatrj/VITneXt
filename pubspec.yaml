@@ -18,6 +18,7 @@ dependencies:
   permission_handler: ^12.0.3
   flutter_local_notifications: ^18.0.1
   timezone: ^0.10.0
+  flutter_timezone: ^4.1.0
   share_plus: ^10.1.4
   file_picker: ^10.1.2
   excel: ^4.0.6

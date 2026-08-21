@@ -46,11 +46,13 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (!hasReleaseKeystore) {
+                throw GradleException(
+                    "Release builds require android/key.properties. " +
+                        "Copy key.properties.example and configure your upload keystore."
+                )
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -16,14 +16,15 @@ class ScheduleResolver {
     final activeSemester = await _storage.getActiveSemester();
     if (activeSemester == null) return [];
 
-    // 3. Holidays that hide classes clear the schedule unless overrides exist
-    // (e.g. extra class on a marked holiday).
+    // 3. Holidays that hide classes clear the regular timetable; extras/modified
+    // still apply but must not resurrect the full FFCS grid.
     final holiday = await getHolidayForDate(date);
     final overrides = await _storage.getOverridesForDate(date);
     final overridesImplyClasses = overrides.any(
       (o) => o.type == OverrideType.extra || o.type == OverrideType.modified,
     );
-    if (holiday != null && holiday.hidesClasses && !overridesImplyClasses) {
+    final hidingHoliday = holiday != null && holiday.hidesClasses;
+    if (hidingHoliday && !overridesImplyClasses) {
       return [];
     }
 
@@ -33,27 +34,29 @@ class ScheduleResolver {
     final int dayOfWeek = date.weekday; // 1=Mon, 7=Sun
     List<ResolvedClass> resolvedClasses = [];
 
-    // 5 & 6. Recurring pattern: for each course, get its FFCS timings for this day
-    for (var course in courses) {
-      final timings = FFCSSlotDatabase.getTimingsForDay(course.ffcsSlot, dayOfWeek);
-      for (var timing in timings) {
-        resolvedClasses.add(
-          ResolvedClass(
-            courseCode: course.code,
-            courseName: course.name,
-            faculty: course.faculty,
-            startHour: timing.startHour,
-            startMinute: timing.startMinute,
-            endHour: timing.endHour,
-            endMinute: timing.endMinute,
-            building: course.building,
-            floor: course.floor,
-            room: course.room,
-            status: ClassStatus.upcoming,
-            isOverride: false,
-            linkedCourseId: course.id,
-          ),
-        );
+    // 5 & 6. Recurring pattern — skip when a hiding holiday only has override classes.
+    if (!hidingHoliday) {
+      for (var course in courses) {
+        final timings = FFCSSlotDatabase.getTimingsForDay(course.ffcsSlot, dayOfWeek);
+        for (var timing in timings) {
+          resolvedClasses.add(
+            ResolvedClass(
+              courseCode: course.code,
+              courseName: course.name,
+              faculty: course.faculty,
+              startHour: timing.startHour,
+              startMinute: timing.startMinute,
+              endHour: timing.endHour,
+              endMinute: timing.endMinute,
+              building: course.building,
+              floor: course.floor,
+              room: course.room,
+              status: ClassStatus.upcoming,
+              isOverride: false,
+              linkedCourseId: course.id,
+            ),
+          );
+        }
       }
     }
 

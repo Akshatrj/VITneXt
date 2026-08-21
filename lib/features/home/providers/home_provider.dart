@@ -28,14 +28,7 @@ final dayScheduleProvider = FutureProvider.family<List<ResolvedClass>, DateTime>
   }
 
   final resolver = ref.read(scheduleResolverProvider);
-  final schedule = await resolver.resolveSchedule(date, now: now);
-
-  // Update widget when today's schedule is loaded
-  if (isToday) {
-    refreshWidgetSchedule(ref);
-  }
-
-  return schedule;
+  return resolver.resolveSchedule(date, now: now);
 });
 
 // Holiday for selected date
@@ -84,7 +77,14 @@ void invalidateTodaySchedule(WidgetRef ref) {
 }
 
 /// Push current/next class info to the Android home-screen widget.
-Future<void> refreshWidgetSchedule(dynamic ref) async {
+///
+/// [syncClassFocus] and [syncNotifications] should stay false for UI-only
+/// refreshes (e.g. pull-to-refresh display) to avoid cancel/reschedule churn.
+Future<void> refreshWidgetSchedule(
+  dynamic ref, {
+  bool syncClassFocus = true,
+  bool syncNotifications = true,
+}) async {
   try {
     final resolver = ref.read(scheduleResolverProvider);
     final now = DateTime.now();
@@ -120,10 +120,18 @@ Future<void> refreshWidgetSchedule(dynamic ref) async {
       dayComplete: dayComplete,
       noClassesToday: noClassesToday,
     );
-    invalidateClassLiveMonitorSync();
-    await syncClassLiveMonitor(ref);
-    await rescheduleClassNotifications(ref);
+    if (syncClassFocus) {
+      invalidateClassLiveMonitorSync();
+      await syncClassLiveMonitor(ref);
+    }
+    if (syncNotifications) {
+      await rescheduleClassNotifications(ref);
+    }
   } catch (_) {
     // Never let widget/notification refresh crash the UI.
   }
 }
+
+/// Widget display refresh only — no Class Focus or notification reschedule.
+Future<void> refreshWidgetDisplayOnly(dynamic ref) =>
+    refreshWidgetSchedule(ref, syncClassFocus: false, syncNotifications: false);
