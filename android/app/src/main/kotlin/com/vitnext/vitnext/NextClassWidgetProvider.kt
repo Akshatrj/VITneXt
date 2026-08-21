@@ -43,9 +43,12 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         const val KEY_PENDING_SCHEDULE_SYNC = "flutter.pending_schedule_sync"
         const val KEY_DAY_COMPLETE = "flutter.widget_day_complete"
         const val KEY_NO_CLASSES = "flutter.widget_no_classes"
+        const val KEY_BROWSE_MODE = "flutter.widget_browse_mode"
 
         const val ACTION_CANCEL_NEXT = "com.vitnext.CANCEL_NEXT_CLASS"
         const val ACTION_SHOW_NEXT = "com.vitnext.SHOW_NEXT_CLASS"
+        const val ACTION_SHOW_PREV = "com.vitnext.SHOW_PREV_CLASS"
+        const val ACTION_SHOW_LIVE = "com.vitnext.SHOW_LIVE_CLASS"
         const val ACTION_BOUNDARY = "com.vitnext.WIDGET_BOUNDARY"
 
         const val EXTRA_COURSE_ID = "linked_course_id"
@@ -77,8 +80,11 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             val provider = NextClassWidgetProvider()
             when (intent?.action) {
                 ACTION_SHOW_NEXT -> provider.handleShowNext(context)
+                ACTION_SHOW_PREV -> provider.handleShowPrev(context)
+                ACTION_SHOW_LIVE -> provider.handleShowLive(context)
                 ACTION_CANCEL_NEXT -> provider.handleCancelToggle(context, intent)
                 ACTION_BOUNDARY -> {
+                    provider.clearBrowseMode(context)
                     provider.refreshAllWidgets(context)
                     provider.scheduleBoundaryAlarm(context)
                 }
@@ -89,7 +95,8 @@ class NextClassWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         // Legacy PendingIntents may still target this provider until widgets refresh.
         when (intent.action) {
-            ACTION_SHOW_NEXT, ACTION_CANCEL_NEXT, ACTION_BOUNDARY -> {
+            ACTION_SHOW_NEXT, ACTION_SHOW_PREV, ACTION_SHOW_LIVE,
+            ACTION_CANCEL_NEXT, ACTION_BOUNDARY -> {
                 try {
                     handleWidgetAction(context, intent)
                 } catch (_: Exception) {
@@ -129,27 +136,103 @@ class NextClassWidgetProvider : AppWidgetProvider() {
 
     private fun handleShowNext(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        // Empty / holiday / day-complete states do not browse future days.
         if (isStaticDayState(prefs)) {
             refreshAllWidgets(context)
             return
         }
 
-        val queue = readQueue(prefs)
+        var queue = readQueue(prefs)
         if (queue.isEmpty()) {
             refreshAllWidgets(context)
             return
         }
 
-        val cancelled = readCancelledKeys(prefs)
-        val currentIndex = readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
-        val nextIndex = findNextNonCancelledIndex(queue, cancelled, currentIndex + 1)
-            ?: findNextNonCancelledIndex(queue, cancelled, 0)
-            ?: (currentIndex % queue.size)
+        queue = recomputeTodayQueueStatuses(queue)
+        prefs.edit().putString(KEY_QUEUE_JSON, JSONArray(queue).toString()).apply()
 
-        prefs.edit().putInt(KEY_QUEUE_INDEX, nextIndex).apply()
-        writeLegacyKeysFromQueueItem(prefs, queue[nextIndex])
+        val cancelled = readCancelledKeys(prefs)
+        val browseMode = readPrefBool(prefs, KEY_BROWSE_MODE, false)
+        val fromIndex = if (browseMode) {
+            readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+        } else {
+            resolveDefaultIndex(queue, cancelled)
+        }
+
+        val nextIndex = findNextFutureIndex(queue, cancelled, fromIndex)
+        if (nextIndex == null) {
+            refreshAllWidgets(context)
+            return
+        }
+
+        prefs.edit()
+            .putString(KEY_BROWSE_MODE, "true")
+            .putInt(KEY_QUEUE_INDEX, nextIndex)
+            .apply()
         refreshAllWidgets(context)
+    }
+
+    private fun handleShowPrev(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (isStaticDayState(prefs)) {
+            refreshAllWidgets(context)
+            return
+        }
+
+        var queue = readQueue(prefs)
+        if (queue.isEmpty()) {
+            refreshAllWidgets(context)
+            return
+        }
+
+        queue = recomputeTodayQueueStatuses(queue)
+        val cancelled = readCancelledKeys(prefs)
+        val browseMode = readPrefBool(prefs, KEY_BROWSE_MODE, false)
+        if (!browseMode) {
+            refreshAllWidgets(context)
+            return
+        }
+
+        val currentIndex = readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+        val prevIndex = findPrevFutureIndex(queue, cancelled, currentIndex)
+        if (prevIndex != null) {
+            prefs.edit().putInt(KEY_QUEUE_INDEX, prevIndex).apply()
+        } else {
+            clearBrowseMode(context, queue, cancelled)
+        }
+        refreshAllWidgets(context)
+    }
+
+    private fun handleShowLive(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (isStaticDayState(prefs)) {
+            refreshAllWidgets(context)
+            return
+        }
+
+        val queue = recomputeTodayQueueStatuses(readQueue(prefs))
+        val cancelled = readCancelledKeys(prefs)
+        clearBrowseMode(context, queue, cancelled)
+        refreshAllWidgets(context)
+    }
+
+    fun clearBrowseMode(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val queue = readQueue(prefs)
+        val cancelled = readCancelledKeys(prefs)
+        clearBrowseMode(context, queue, cancelled)
+    }
+
+    private fun clearBrowseMode(
+        context: Context,
+        queue: List<JSONObject>,
+        cancelled: Set<String>,
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val defaultIndex = resolveDefaultIndex(queue, cancelled)
+        prefs.edit()
+            .remove(KEY_BROWSE_MODE)
+            .putInt(KEY_QUEUE_INDEX, defaultIndex)
+            .apply()
     }
 
     private fun handleCancelToggle(context: Context, intent: Intent? = null) {
@@ -257,6 +340,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
                 ClassLiveMonitorService.KEY_SCHEDULE_JSON,
                 scheduleArray.toString()
             )
+            .putString(ClassLiveMonitorService.KEY_SCHEDULE_DATE, scheduleDate)
             .apply()
 
         val syncIntent = Intent(context, ClassLiveMonitorService::class.java).apply {
@@ -376,34 +460,36 @@ class NextClassWidgetProvider : AppWidgetProvider() {
                     .apply()
             }
             liveCurrent != null || liveNext != null || queue.isNotEmpty() -> {
-                val focus = liveCurrent ?: liveNext
-                var index = if (focus != null) {
-                    queue.indexOf(focus).takeIf { it >= 0 }
-                        ?: readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+        val browseMode = readPrefBool(prefs, KEY_BROWSE_MODE, false)
+                val defaultIndex = resolveDefaultIndex(queue, cancelled)
+                val index = if (browseMode) {
+                    val stored = readPrefInt(prefs, KEY_QUEUE_INDEX, defaultIndex)
+                    if (stored in queue.indices) stored else defaultIndex
                 } else {
-                    readPrefInt(prefs, KEY_QUEUE_INDEX, 0)
+                    defaultIndex
                 }
-                if (index !in queue.indices) index = 0
-                if (isItemCancelled(queue[index], cancelled)) {
-                    index = findNextNonCancelledIndex(queue, cancelled, index)
-                        ?: findNextNonCancelledIndex(queue, cancelled, 0)
-                        ?: index
-                }
-                prefs.edit().putInt(KEY_QUEUE_INDEX, index).apply()
 
-                val item = liveCurrent ?: liveNext ?: queue[index]
-                val isCancelled = isItemCancelled(item, cancelled)
-                val browsableCount = queue.count {
-                    !isItemCancelled(it, cancelled) &&
-                        it.optString("status", "") != "completed"
+                if (!browseMode) {
+                    prefs.edit().putInt(KEY_QUEUE_INDEX, defaultIndex).apply()
                 }
+
+                val safeIndex = if (index in queue.indices) index else 0
+                val item = queue[safeIndex]
+                val isCancelled = isItemCancelled(item, cancelled)
+                val futureBrowsable = findFutureBrowsableIndices(queue, cancelled)
+                val hasLiveCurrent = liveCurrent != null
+
                 bindClassFromJson(views, item, isCancelled)
                 bindActionButtons(
                     context,
                     views,
                     item,
                     isCancelled,
-                    hasMultiple = browsableCount > 1,
+                    browseMode = browseMode,
+                    hasLiveCurrent = hasLiveCurrent,
+                    futureBrowsableCount = futureBrowsable.size,
+                    displayIndex = safeIndex,
+                    futureBrowsable = futureBrowsable,
                 )
                 writeLegacyKeysFromQueueItem(prefs, item)
             }
@@ -455,16 +541,16 @@ class NextClassWidgetProvider : AppWidgetProvider() {
                     if (!nextFound) {
                         item.put("status", "next")
                         nextFound = true
-                        val startCal = java.util.Calendar.getInstance().apply {
-                            set(java.util.Calendar.HOUR_OF_DAY, startHour)
-                            set(java.util.Calendar.MINUTE, item.optInt("startMinute", 0))
-                            set(java.util.Calendar.SECOND, 0)
-                            set(java.util.Calendar.MILLISECOND, 0)
-                        }
-                        item.put("targetMillis", startCal.timeInMillis)
                     } else {
                         item.put("status", "upcoming")
                     }
+                    val startCal = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, startHour)
+                        set(java.util.Calendar.MINUTE, item.optInt("startMinute", 0))
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    item.put("targetMillis", startCal.timeInMillis)
                 }
             }
         }
@@ -540,6 +626,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         when {
             isCancelled -> views.setTextViewText(R.id.widget_status_badge, "CANCELLED")
             status == "current" -> views.setTextViewText(R.id.widget_status_badge, "NOW")
+            status == "upcoming" -> views.setTextViewText(R.id.widget_status_badge, "UPCOMING")
             else -> views.setTextViewText(R.id.widget_status_badge, "NEXT")
         }
 
@@ -550,12 +637,13 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         )
         views.setTextViewText(R.id.widget_time, time)
         views.setTextViewText(R.id.widget_room, room)
-        // Countdown only for the current class — never for next.
         views.setTextViewText(
             R.id.widget_countdown,
             when {
                 isCancelled -> "Cancelled by Teacher"
                 status == "current" -> calculateEndsIn(targetMillis)
+                status == "next" || status == "upcoming" ->
+                    calculateStartsIn(targetMillis)
                 else -> ""
             }
         )
@@ -602,12 +690,20 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         views: RemoteViews,
         item: JSONObject,
         isCancelled: Boolean,
-        hasMultiple: Boolean
+        browseMode: Boolean,
+        hasLiveCurrent: Boolean,
+        futureBrowsableCount: Int,
+        displayIndex: Int,
+        futureBrowsable: List<Int>,
     ) {
         val courseId = item.optString("linkedCourseId", "")
         val canCancel = courseId.isNotBlank()
 
-        if (hasMultiple) {
+        val canShowNext = futureBrowsableCount > 0 &&
+            (browseMode || hasLiveCurrent || futureBrowsableCount > 1 ||
+                (futureBrowsableCount == 1 && !futureBrowsable.contains(displayIndex)))
+
+        if (canShowNext) {
             views.setViewVisibility(R.id.widget_next_btn, View.VISIBLE)
             val nextPending = PendingIntent.getBroadcast(
                 context, 2, actionIntent(context, ACTION_SHOW_NEXT),
@@ -616,6 +712,30 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_next_btn, nextPending)
         } else {
             views.setViewVisibility(R.id.widget_next_btn, View.GONE)
+        }
+
+        val canShowPrev = browseMode && futureBrowsable.any { it < displayIndex }
+
+        if (canShowPrev) {
+            views.setViewVisibility(R.id.widget_prev_btn, View.VISIBLE)
+            val prevPending = PendingIntent.getBroadcast(
+                context, 3, actionIntent(context, ACTION_SHOW_PREV),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_prev_btn, prevPending)
+        } else {
+            views.setViewVisibility(R.id.widget_prev_btn, View.GONE)
+        }
+
+        if (browseMode && hasLiveCurrent) {
+            views.setViewVisibility(R.id.widget_back_btn, View.VISIBLE)
+            val backPending = PendingIntent.getBroadcast(
+                context, 4, actionIntent(context, ACTION_SHOW_LIVE),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_back_btn, backPending)
+        } else {
+            views.setViewVisibility(R.id.widget_back_btn, View.GONE)
         }
 
         if (canCancel) {
@@ -633,9 +753,10 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_cancel_btn, View.GONE)
         }
 
+        val showActions = canShowNext || canShowPrev || (browseMode && hasLiveCurrent) || canCancel
         views.setViewVisibility(
             R.id.widget_actions_row,
-            if (hasMultiple || canCancel) View.VISIBLE else View.GONE
+            if (showActions) View.VISIBLE else View.GONE
         )
     }
 
@@ -669,6 +790,8 @@ class NextClassWidgetProvider : AppWidgetProvider() {
 
     private fun hideActions(views: RemoteViews) {
         views.setViewVisibility(R.id.widget_actions_row, View.GONE)
+        views.setViewVisibility(R.id.widget_back_btn, View.GONE)
+        views.setViewVisibility(R.id.widget_prev_btn, View.GONE)
         views.setViewVisibility(R.id.widget_next_btn, View.GONE)
         views.setViewVisibility(R.id.widget_cancel_btn, View.GONE)
     }
@@ -855,6 +978,65 @@ class NextClassWidgetProvider : AppWidgetProvider() {
         if (diff <= 0) return "Ending now"
         val totalMinutes = (diff / (1000 * 60)).toInt()
         return "Ends in " + formatDuration(totalMinutes)
+    }
+
+    /** Time until a future class starts. */
+    private fun calculateStartsIn(targetMillis: Long): String {
+        if (targetMillis <= 0) return ""
+        val diff = targetMillis - System.currentTimeMillis()
+        if (diff <= 0) return "Starting now"
+        val totalMinutes = (diff / (1000 * 60)).toInt()
+        return "Starts in " + formatDuration(totalMinutes)
+    }
+
+    /** Default widget focus: live current → live next → first future class. */
+    private fun resolveDefaultIndex(queue: List<JSONObject>, cancelled: Set<String>): Int {
+        if (queue.isEmpty()) return 0
+        val currentIdx = queue.indexOfFirst {
+            !isItemCancelled(it, cancelled) && it.optString("status") == "current"
+        }
+        if (currentIdx >= 0) return currentIdx
+        val nextIdx = queue.indexOfFirst {
+            !isItemCancelled(it, cancelled) && it.optString("status") == "next"
+        }
+        if (nextIdx >= 0) return nextIdx
+        val future = findFutureBrowsableIndices(queue, cancelled)
+        if (future.isNotEmpty()) return future.first()
+        return findNextNonCancelledIndex(queue, cancelled, 0) ?: 0
+    }
+
+    /** Indices of not-started, non-cancelled classes (next + upcoming). */
+    private fun findFutureBrowsableIndices(
+        queue: List<JSONObject>,
+        cancelled: Set<String>,
+    ): List<Int> {
+        return queue.indices.filter { i ->
+            val item = queue[i]
+            !isItemCancelled(item, cancelled) &&
+                (item.optString("status") == "next" ||
+                    item.optString("status") == "upcoming")
+        }
+    }
+
+    /** Next future class after [fromIndex] in queue order. */
+    private fun findNextFutureIndex(
+        queue: List<JSONObject>,
+        cancelled: Set<String>,
+        fromIndex: Int,
+    ): Int? {
+        val futures = findFutureBrowsableIndices(queue, cancelled)
+        if (futures.isEmpty()) return null
+        return futures.firstOrNull { it > fromIndex }
+    }
+
+    /** Previous future class before [fromIndex] in queue order. */
+    private fun findPrevFutureIndex(
+        queue: List<JSONObject>,
+        cancelled: Set<String>,
+        fromIndex: Int,
+    ): Int? {
+        val futures = findFutureBrowsableIndices(queue, cancelled)
+        return futures.lastOrNull { it < fromIndex }
     }
 
     private fun formatDuration(totalMinutes: Int): String {

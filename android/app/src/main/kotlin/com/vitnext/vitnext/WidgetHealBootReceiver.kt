@@ -15,6 +15,7 @@ class WidgetHealBootReceiver : BroadcastReceiver() {
         try {
             WidgetHealReceiver.schedule(context)
             WidgetHealReceiver.refreshWidgets(context)
+            DayRolloverScheduler.schedule(context)
         } catch (_: Exception) {
         }
     }

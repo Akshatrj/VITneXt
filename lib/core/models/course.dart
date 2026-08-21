@@ -1,3 +1,4 @@
+import 'package:vit_nextclass/core/database/json_record_normalizers.dart';
 import 'package:vit_nextclass/core/constants/buildings.dart';
 import 'package:vit_nextclass/core/utils/location_formatter.dart';
 
@@ -42,16 +43,16 @@ class Course {
 
   factory Course.fromJson(Map<String, dynamic> json) {
     return Course(
-      id: json['id'] as String,
-      semesterId: json['semesterId'] as String,
-      code: json['code'] as String,
-      name: json['name'] as String,
-      faculty: json['faculty'] as String,
-      ffcsSlot: json['ffcsSlot'] as String,
-      building: json['building'] as String,
-      floor: json['floor'] as String,
-      room: json['room'] as String,
-      color: json['color'] as int?,
+      id: jsonStr(json['id']),
+      semesterId: jsonStr(json['semesterId']),
+      code: jsonStr(json['code'] ?? json['courseCode']),
+      name: jsonStr(json['name'] ?? json['courseName']),
+      faculty: jsonStr(json['faculty']),
+      ffcsSlot: jsonStr(json['ffcsSlot'] ?? json['slot']),
+      building: jsonStr(json['building']),
+      floor: jsonStr(json['floor']),
+      room: jsonStr(json['room']),
+      color: jsonInt(json['color']),
     );
   }
 

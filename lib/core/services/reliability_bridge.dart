@@ -51,6 +51,16 @@ class ReliabilityBridge {
     }
   }
 
+  /// Schedules a midnight alarm to refresh widget + class focus without opening the app.
+  static Future<void> scheduleDayRollover() async {
+    try {
+      await _channel.invokeMethod('scheduleDayRollover');
+      AppLog.instance.info('lifecycle', 'Scheduled day rollover alarm');
+    } catch (e, st) {
+      AppLog.instance.error('lifecycle', 'scheduleDayRollover failed', error: e, stackTrace: st);
+    }
+  }
+
   static Future<void> forceWidgetRefresh() async {
     try {
       await _channel.invokeMethod('forceWidgetRefresh');

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vit_nextclass/core/database/local_storage.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/models/holiday.dart';
@@ -30,8 +31,13 @@ void main() {
   });
 
   tearDownAll(() async {
-    if (await testDir.exists()) {
-      await testDir.delete(recursive: true);
+    LocalStorage().resetForTest();
+    try {
+      if (await testDir.exists()) {
+        await testDir.delete(recursive: true);
+      }
+    } catch (_) {
+      // Temp dir may still be locked by AppLog on Windows.
     }
   });
 
@@ -39,8 +45,14 @@ void main() {
     late LocalStorage storage;
 
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       storage = LocalStorage();
+      storage.resetForTest();
       await storage.resetAll();
+    });
+
+    tearDown(() {
+      storage.resetForTest();
     });
 
     test('saveSemester and getActiveSemester roundtrip', () async {

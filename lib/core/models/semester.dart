@@ -1,3 +1,5 @@
+import 'package:vit_nextclass/core/database/json_record_normalizers.dart';
+
 class Semester {
   final String id;
   final String name;
@@ -23,9 +25,9 @@ class Semester {
 
   factory Semester.fromJson(Map<String, dynamic> json) {
     return Semester(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      isActive: json['isActive'] as bool? ?? false,
+      id: jsonStr(json['id']),
+      name: jsonStr(json['name'] ?? json['semesterName']),
+      isActive: jsonBool(json['isActive']),
     );
   }
 

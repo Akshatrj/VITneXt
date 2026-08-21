@@ -17,11 +17,15 @@ class ClassFocusBridge {
     }
 
     final scheduleJson = jsonEncode(todaySchedule.map(_slotToJson).toList());
+    final today = DateTime.now();
+    final scheduleDate =
+        '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
     try {
       await _channel.invokeMethod('syncClassMonitor', {
         'autoSilent': autoSilentEnabled,
         'scheduleJson': scheduleJson,
+        'scheduleDate': scheduleDate,
       });
     } catch (_) {
       // Native channel unavailable (non-Android).

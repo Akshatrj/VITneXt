@@ -1,3 +1,4 @@
+import 'package:vit_nextclass/core/database/json_record_normalizers.dart';
 import 'package:vit_nextclass/core/utils/location_formatter.dart';
 
 enum OverrideType { cancelled, extra, modified }
@@ -55,18 +56,19 @@ class ScheduleOverride {
   }
 
   factory ScheduleOverride.fromJson(Map<String, dynamic> json) {
+    final dateRaw = json['date'] ?? json['scheduleDate'];
     return ScheduleOverride(
-      id: json['id'] as String,
-      date: DateTime.parse(json['date'] as String),
+      id: jsonStr(json['id']),
+      date: DateTime.parse(jsonStr(dateRaw)),
       type: OverrideType.values.firstWhere(
-        (e) => e.name == json['type'],
+        (e) => e.name == jsonStr(json['type'], fallback: 'modified'),
         orElse: () => OverrideType.modified,
       ),
       linkedCourseId: json['linkedCourseId'] as String?,
-      overrideStartHour: json['overrideStartHour'] as int?,
-      overrideStartMinute: json['overrideStartMinute'] as int?,
-      overrideEndHour: json['overrideEndHour'] as int?,
-      overrideEndMinute: json['overrideEndMinute'] as int?,
+      overrideStartHour: jsonInt(json['overrideStartHour']),
+      overrideStartMinute: jsonInt(json['overrideStartMinute']),
+      overrideEndHour: jsonInt(json['overrideEndHour']),
+      overrideEndMinute: jsonInt(json['overrideEndMinute']),
       overrideBuilding: json['overrideBuilding'] as String?,
       overrideFloor: json['overrideFloor'] as String?,
       overrideRoom: json['overrideRoom'] as String?,

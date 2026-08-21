@@ -27,6 +27,7 @@ class ClassLiveMonitorService : Service() {
         const val PREFS_NAME = "FlutterSharedPreferences"
         const val KEY_AUTO_SILENT = "flutter.auto_silent_during_class"
         const val KEY_SCHEDULE_JSON = "flutter.live_schedule_json"
+        const val KEY_SCHEDULE_DATE = "flutter.live_schedule_date"
 
         private const val CHANNEL_ID = "class_focus"
         private const val NOTIFICATION_ID = 10042
@@ -97,7 +98,8 @@ class ClassLiveMonitorService : Service() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val autoSilent = FlutterPrefs.getBool(prefs, KEY_AUTO_SILENT, false)
         val scheduleJson = prefs.getString(KEY_SCHEDULE_JSON, "[]") ?: "[]"
-        return SharedPrefsSnapshot(autoSilent, scheduleJson)
+        val scheduleDate = prefs.getString(KEY_SCHEDULE_DATE, "") ?: ""
+        return SharedPrefsSnapshot(autoSilent, scheduleJson, scheduleDate)
     }
 
     private fun evaluateAndUpdate() {
@@ -110,7 +112,15 @@ class ClassLiveMonitorService : Service() {
             return
         }
 
-        val classes = parseSchedule(snapshot.scheduleJson)
+        val todayKey = todayDateKey()
+        val scheduleJson = if (snapshot.scheduleDate == todayKey) {
+            snapshot.scheduleJson
+        } else {
+            // Stale schedule from a previous day — do not apply silent mode until Flutter refreshes.
+            "[]"
+        }
+
+        val classes = parseSchedule(scheduleJson)
         ClassLiveScheduler.schedule(this, classes)
 
         val active = findCurrentClass(classes)
@@ -201,6 +211,14 @@ class ClassLiveMonitorService : Service() {
         return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 
+    private fun todayDateKey(): String {
+        val cal = Calendar.getInstance()
+        val y = cal.get(Calendar.YEAR)
+        val m = cal.get(Calendar.MONTH) + 1
+        val d = cal.get(Calendar.DAY_OF_MONTH)
+        return String.format("%04d-%02d-%02d", y, m, d)
+    }
+
     private fun findCurrentClass(classes: List<LiveClassEntry>): LiveClassEntry? {
         val now = nowMinutes()
         return classes.firstOrNull { cls ->
@@ -212,7 +230,8 @@ class ClassLiveMonitorService : Service() {
 
     data class SharedPrefsSnapshot(
         val autoSilent: Boolean,
-        val scheduleJson: String
+        val scheduleJson: String,
+        val scheduleDate: String,
     )
 
     data class LiveClassEntry(

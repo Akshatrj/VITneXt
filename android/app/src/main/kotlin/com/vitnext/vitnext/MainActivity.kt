@@ -50,6 +50,10 @@ class MainActivity : FlutterActivity() {
                         WidgetHealReceiver.schedule(this)
                         result.success(null)
                     }
+                    "scheduleDayRollover" -> {
+                        DayRolloverScheduler.schedule(this)
+                        result.success(null)
+                    }
                     "forceWidgetRefresh" -> {
                         WidgetHealReceiver.refreshWidgets(this)
                         result.success(null)
@@ -67,6 +71,7 @@ class MainActivity : FlutterActivity() {
                     "syncClassMonitor" -> {
                         val autoSilent = call.argument<Boolean>("autoSilent") ?: false
                         val scheduleJson = call.argument<String>("scheduleJson") ?: "[]"
+                        val scheduleDate = call.argument<String>("scheduleDate") ?: ""
 
                         val prefs = getSharedPreferences(
                             ClassLiveMonitorService.PREFS_NAME,
@@ -78,6 +83,7 @@ class MainActivity : FlutterActivity() {
                                 if (autoSilent) "true" else "false"
                             )
                             .putString(ClassLiveMonitorService.KEY_SCHEDULE_JSON, scheduleJson)
+                            .putString(ClassLiveMonitorService.KEY_SCHEDULE_DATE, scheduleDate)
                             .apply()
 
                         if (autoSilent) {

@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:vit_nextclass/core/database/storage_migration_runner.dart';
+import 'package:vit_nextclass/core/database/storage_schema.dart';
 import 'package:vit_nextclass/core/models/semester.dart';
 import 'package:vit_nextclass/core/models/course.dart';
 import 'package:vit_nextclass/core/models/schedule_override.dart';
@@ -18,14 +21,21 @@ class LocalStorage {
   Future<void> init() async {
     if (_initialized) return;
     _dir = await getApplicationDocumentsDirectory();
+    await StorageMigrationRunner.run(_dir);
     _initialized = true;
     AppLog.instance.info('db', 'LocalStorage initialized', data: {'path': _dir.path});
   }
 
-  static const _semestersFileName = 'semesters.json';
-  static const _coursesFileName = 'courses.json';
-  static const _overridesFileName = 'overrides.json';
-  static const _holidaysFileName = 'holidays.json';
+  /// Clears in-memory init flag so tests can re-run [init] against a fresh directory.
+  @visibleForTesting
+  void resetForTest() {
+    _initialized = false;
+  }
+
+  static const _semestersFileName = StorageSchema.semestersFile;
+  static const _coursesFileName = StorageSchema.coursesFile;
+  static const _overridesFileName = StorageSchema.overridesFile;
+  static const _holidaysFileName = StorageSchema.holidaysFile;
 
   File _backupFile(File file) => File('${file.path}.bak');
 

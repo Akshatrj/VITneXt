@@ -224,6 +224,8 @@ class WidgetBridge {
       nextClass: nextClass,
     );
     await prefs.setInt('widget_queue_index', queueIndex);
+    // Native widget resets to live current/next on each bridge update.
+    await prefs.remove('widget_browse_mode');
 
     final pendingScheduleSync = readPrefBool(prefs, 'pending_schedule_sync');
     if (!pendingScheduleSync) {

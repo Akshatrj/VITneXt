@@ -21,6 +21,8 @@ class ClassLiveBootReceiver : BroadcastReceiver() {
         val autoSilent = FlutterPrefs.getBool(prefs, ClassLiveMonitorService.KEY_AUTO_SILENT, false)
         if (!autoSilent) return
 
+        DayRolloverScheduler.schedule(context)
+
         val serviceIntent = Intent(context, ClassLiveMonitorService::class.java).apply {
             action = ClassLiveMonitorService.ACTION_SYNC
         }
