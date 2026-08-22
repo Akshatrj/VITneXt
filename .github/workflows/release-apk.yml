@@ -1,5 +1,6 @@
 name: Release APK
 
+# Trigger: manual run or pushes that touch app/android sources.
 on:
   workflow_dispatch:
   push:
